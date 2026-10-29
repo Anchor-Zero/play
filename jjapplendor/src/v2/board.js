@@ -68,6 +68,7 @@
    * @property {number|null} [leader]     방장 자리(이름 옆에 작은 관 표시). 없으면 표시 없음
    * @property {GameEvent[]} [log]        최근 일(오래된 것부터). 주면 이것을 '최근 일'에 보이고, 없으면 판이 받은 events 를 모아 쓴다
    * @property {boolean} [announceTurn]   true 면 reset 으로 그려도(한 화면 모드처럼 차례마다 갈아 끼울 때) 차례가 바뀌어 내 차례가 시작될 때 내 자리 빛남과 차례 소리를 낸다
+   * @property {(seat:number) => ({title:string, text:string}|null)} [seatNote]  상대 칸을 눌러 펼쳤을 때 맨 아래 한 줄('title — text', data-test seat-note). null 이면 없음
    * @property {{move?:(m:Move) => void, toast?:(msg:string) => void, newGame?:() => void}} [on]
    */
 
@@ -1263,6 +1264,7 @@
         onclick: () => inst.ctx.open({ kind: 'card', cardId: r.id }) }, skin.card(Zap.data.cardsById[r.id]));
     });
     const nobles = p.nobles.map((/** @type {string} */ id) => h('span.zb-pzoom__noble', { style: { '--noble-w': Math.round(cw * 0.86) + 'px' } }, skin.noble(Zap.data.noblesById[id])));
+    const note = o.seatNote ? o.seatNote(seat) : null;
     return /** @type {HTMLElement[]} */ ([
       h('button.zb-pzoom__head', { type: 'button', test: 'sheet-close', 'aria-label': o.names[seat] + '님, 누르면 닫힘', onclick: close },
         o.leader !== undefined && o.leader !== null && o.leader === seat ? leaderMark() : null,
@@ -1272,6 +1274,7 @@
         skin.pointsBadge(p.score, Math.round(Z.u * 3))),
       h('div.zb-hold.zb-pzoom__hold', null, cols),
       (res.length || nobles.length) ? h('div.zb-pzoom__cards', null, res, nobles) : null,
+      note ? h('div.zb-pzoom__note', { test: 'seat-note' }, h('b', null, note.title), note.text ? ' — ' + note.text : null) : null,
     ].filter(Boolean));
   }
 

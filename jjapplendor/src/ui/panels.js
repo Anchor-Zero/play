@@ -71,26 +71,63 @@
   }
 
   /**
-   * 한 화면에서 두기 설정.
-   * @param {{n:number, names:string[], first:string, curtain:boolean, error:string}} s
-   * @param {{count:(n:number) => void, name:(i:number, v:string) => void, nameDone:() => void, first:(v:string) => void, curtain:(v:boolean) => void, start:() => void, back:() => void}} on
+   * 한 화면에서 두기 설정. 자리마다 사람/컴퓨터를 고르고, 컴퓨터 자리는 이름 대신 스타일을 고른다(맨 위 '무작위'가 기본).
+   * 컴퓨터 자리의 이름은 판을 열 때 app 이 사람 이름 목록에서 뽑는다.
+   * @param {{n:number, names:string[], kinds:string[], styleIds:string[], styles:Array<{id:string, label:string}>, shownNames:string[], canBots:boolean,
+   *   first:string, curtain:boolean, error:string}} s
+   *   names: 사람 자리에 적은 이름, kinds: 'human'|'bot', styleIds: 컴퓨터 자리의 선택('random' 또는 스타일 id),
+   *   shownNames: 선 플레이어 목록에 보일 이름(컴퓨터 자리는 '컴퓨터'), canBots: 컴퓨터 상대를 쓸 수 있는지
+   * @param {{count:(n:number) => void, name:(i:number, v:string) => void, nameDone:() => void, kind:(i:number, v:string) => void, style:(i:number, v:string) => void,
+   *   first:(v:string) => void, curtain:(v:boolean) => void, start:() => void, back:() => void}} on
    * @returns {HTMLElement}
    */
   function localSetup(s, on) {
     const seats = [];
+    let humans = 0;
+    let bots = 0;
     for (let i = 0; i < s.n; i++) {
-      seats.push(h('label.field.field--seat', null,
-        h('span.plist__no', null, String(i + 1)),
-        h('input.input', {
-          type: 'text', test: 'local-name-' + i, maxlength: 24, autocomplete: 'off', placeholder: '1~12자', value: s.names[i], 'aria-label': (i + 1) + '번 자리 이름',
+      const bot = s.canBots && s.kinds[i] === 'bot';
+      if (bot) bots++; else humans++;
+      const kind = s.canBots ? h('select.input.input--select.input--kind', {
+        test: 'local-kind-' + i, 'data-key': 'kind-' + i, 'aria-label': (i + 1) + '번 자리: 사람 또는 컴퓨터',
+        onchange: (/** @type {Event} */ e) => on.kind(i, /** @type {HTMLSelectElement} */ (e.target).value),
+      },
+        h('option', { value: 'human', selected: !bot }, '사람'),
+        h('option', { value: 'bot', selected: bot }, '컴퓨터')) : null;
+      const main = bot
+        ? h('select.input.input--select.input--style', {
+          test: 'local-style-' + i, 'data-key': 'style-' + i, 'aria-label': (i + 1) + '번 자리 컴퓨터 스타일',
+          onchange: (/** @type {Event} */ e) => on.style(i, /** @type {HTMLSelectElement} */ (e.target).value),
+        }, h('option', { value: 'random', selected: !s.styles.some((st) => st.id === s.styleIds[i]) }, '무작위'),
+          s.styles.map((st) => h('option', { value: st.id, selected: st.id === s.styleIds[i] }, st.label)))
+        : h('input.input.input--seatname', {
+          type: 'text', test: 'local-name-' + i, 'data-key': 'name-' + i, maxlength: 24, autocomplete: 'off', placeholder: '1~12자', value: s.names[i], 'aria-label': (i + 1) + '번 자리 이름',
           oninput: (/** @type {Event} */ e) => on.name(i, /** @type {HTMLInputElement} */ (e.target).value),
           onchange: () => on.nameDone(),
-        })));
+        });
+      // 고를 것이 이름 칸 하나뿐이면(컴퓨터 상대를 못 쓰는 경우) 예전처럼 줄 전체가 이름 칸의 label
+      seats.push(h((s.canBots ? 'div' : 'label') + '.field.field--seat', { 'data-key': 'seat-' + i, class: bot ? 'is-bot' : '' },
+        h('span.plist__no', null, String(i + 1)), kind, main));
     }
     const firstOpts = [h('option', { value: 'random', selected: s.first === 'random' }, '무작위')];
     for (let i = 0; i < s.n; i++) {
-      firstOpts.push(h('option', { value: 'seat:' + i, selected: s.first === 'seat:' + i }, (i + 1) + '. ' + (String(s.names[i]).trim() || '이름 없음')));
+      firstOpts.push(h('option', { value: 'seat:' + i, selected: s.first === 'seat:' + i }, (i + 1) + '. ' + (String(s.shownNames[i]).trim() || '이름 없음')));
     }
+    // 가림막은 사람 자리가 둘 이상일 때만 뜻이 있다(사람 1명 + 컴퓨터면 상대의 덱 예약 카드는 처음부터 뒷면이라 숨긴다)
+    const curtainBox = humans >= 2 ? h('label.check', { 'data-key': 'curtain' },
+      h('input', {
+        type: 'checkbox', test: 'local-curtain', checked: s.curtain,
+        onchange: (/** @type {Event} */ e) => on.curtain(/** @type {HTMLInputElement} */ (e.target).checked),
+      }),
+      h('span', null, h('b', null, bots ? '사람 자리가 바뀔 때 가림막' : '차례가 바뀔 때 가림막'),
+        h('small', null, s.curtain
+          ? (bots
+            ? '다른 사람의 차례가 되면 화면을 가리고, 그 사람이 [시작]을 눌러야 판이 보입니다. 컴퓨터가 두는 동안에는 가리지 않는 대신, 앞 사람이 덱에서 예약한 카드가 뒷면으로 보입니다.'
+            : '차례가 넘어가면 화면을 가리고, 다음 사람이 [시작]을 눌러야 판이 보입니다. 덱에서 예약한 카드를 서로 보지 않게 합니다.')
+          : (bots
+            ? '다른 사람의 차례가 되면 바로 그 사람의 화면으로 바뀝니다. 덱에서 예약한 카드가 서로 보일 수 있습니다.'
+            : '차례가 넘어가면 바로 다음 사람의 화면으로 바뀝니다. 덱에서 예약한 카드가 서로 보일 수 있습니다.')))) : null;
+    const noHuman = humans === 0;
     return h('main.front.front--form', { test: 'local-setup' },
       h('h1.front__h', null, '한 화면에서 두기'),
       form('.stack', on.start,
@@ -100,25 +137,19 @@
             h('button.btn.seg__btn', { type: 'button', test: 'local-count-' + n, class: s.n === n ? 'is-on' : '', 'aria-pressed': String(s.n === n), onclick: () => on.count(n) }, n + '명')))),
         h('div.field', null,
           h('span.field__label', null, '자리와 이름 — 차례는 선 플레이어부터 번호 순서로 돕니다'),
-          seats),
+          seats,
+          bots ? h('p.note.note--keep', { test: 'local-bot-note', 'data-key': 'bot-note' }, '컴퓨터 이름은 판마다 무작위로 정해집니다. 스타일은 판에서 그 상대를 누르면 보입니다.') : null),
         h('label.field.field--inline', null,
           h('span.field__label', null, '선 플레이어'),
           h('select.input.input--select', {
             test: 'local-first',
             onchange: (/** @type {Event} */ e) => on.first(/** @type {HTMLSelectElement} */ (e.target).value),
           }, firstOpts)),
-        h('label.check', null,
-          h('input', {
-            type: 'checkbox', test: 'local-curtain', checked: s.curtain,
-            onchange: (/** @type {Event} */ e) => on.curtain(/** @type {HTMLInputElement} */ (e.target).checked),
-          }),
-          h('span', null, h('b', null, '차례가 바뀔 때 가림막'),
-            h('small', null, s.curtain
-              ? '차례가 넘어가면 화면을 가리고, 다음 사람이 [시작]을 눌러야 판이 보입니다. 덱에서 예약한 카드를 서로 보지 않게 합니다.'
-              : '차례가 넘어가면 바로 다음 사람의 화면으로 바뀝니다. 덱에서 예약한 카드가 서로 보일 수 있습니다.'))),
+        curtainBox,
+        noHuman ? h('p.note.note--warn', { test: 'local-need-human', role: 'status' }, '사람 자리가 1개 이상 있어야 시작할 수 있습니다.') : null,
         errorBox(s.error),
         h('div.btnrow', null,
-          h('button.btn.btn--primary.btn--big', { type: 'submit', test: 'local-start' }, '판 시작'),
+          h('button.btn.btn--primary.btn--big', { type: 'submit', test: 'local-start', disabled: noHuman }, '판 시작'),
           h('button.btn.btn--quiet', { type: 'button', test: 'back', onclick: on.back }, '뒤로'))));
   }
 

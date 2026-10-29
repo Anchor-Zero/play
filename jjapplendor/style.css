@@ -121,6 +121,22 @@ small { font-size: 12.5px; font-weight: 400; }
 .field--inline .input--select { flex: 1 1 0; width: 0; min-width: 0; max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .field--seat { display: flex; align-items: center; gap: 10px; }
 .field--seat .input { flex: 1; }
+/* 한 화면 설정의 자리 줄: [번호] [사람/컴퓨터] [이름 칸 또는 컴퓨터 스타일]. 아주 좁으면 셋째 칸이 다음 줄로 내려간다 */
+.field--seat:has(.input--kind) { flex-wrap: wrap; row-gap: 6px; }
+.field--seat .input--kind { flex: none; width: auto; min-width: 0; max-width: none; padding-right: 6px; }
+.field--seat .input--seatname, .field--seat .input--style { flex: 1 1 8.5em; width: 0; min-width: 0; max-width: none; }
+.field--seat .input--style { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field--seat.is-bot .plist__no { background: var(--p-well); border-style: dashed; }
+@media (max-width: 379px) {
+  .field--seat .input--kind, .field--seat .input--style { padding-left: 10px; padding-right: 4px; }
+}
+/* 아주 좁은 폰: 번호 옆에 [사람/컴퓨터], 그 아래 같은 줄 맞춤으로 이름 칸·스타일 */
+@media (max-width: 340px) {
+  .field--seat:has(.input--kind) { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; row-gap: 6px; }
+  .field--seat:has(.input--kind) .plist__no { grid-row: span 2; align-self: start; margin-top: 10px; }
+  .field--seat .input--kind { justify-self: start; }
+  .field--seat .input--seatname, .field--seat .input--style { width: 100%; }
+}
 .field--range { grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; }
 .field__label { font-weight: 700; font-size: 14px; }
 .field__val { min-width: 3em; text-align: right; color: var(--p-soft); font-variant-numeric: tabular-nums; }
@@ -134,6 +150,7 @@ small { font-size: 12.5px; font-weight: 400; }
 .stack { display: grid; gap: 16px; }
 .note { color: var(--p-soft); font-size: 13.5px; }
 .note--warn { color: color-mix(in srgb, var(--gold) 70%, var(--p-ink)); font-weight: 700; }
+.note--keep { word-break: keep-all; overflow-wrap: anywhere; } /* 한글 낱말 가운데서 줄이 갈리지 않게 */
 .formerr { padding: 9px 12px; border: 1px solid var(--bad); border-radius: 10px; color: var(--bad); font-weight: 700; font-size: 14px; }
 .codeinline { font-family: var(--n-font); letter-spacing: .12em; font-weight: 700; }
 .seg { display: flex; gap: 8px; }
@@ -196,6 +213,15 @@ html[data-skin="intarsia"] .toast { background: #262419; color: #ece3cd; border-
 .app--game .topbar { position: relative; }
 .stage { position: relative; min-height: 0; overflow: hidden; }
 .stage__board { position: absolute; inset: 0; }
+/* 한 화면: 상대 칸을 눌러 펼친 확대 맨 아래의 컴퓨터 스타일 한 줄(판 셸 opts.seatNote → .zb-pzoom__note).
+   확대 창의 폭을 늘리지 않고(폭 0 + 최소 100%) 그 폭 안에서 낱말 단위로 줄을 바꾼다 */
+.zb-pzoom__note {
+  width: 0; min-width: 100%;
+  padding-top: calc(var(--u) * .6); border-top: 1px solid var(--zb-edge, rgba(255, 255, 255, .15));
+  color: var(--ink-soft); font-size: max(13px, calc(var(--u) * 1.05)); line-height: 1.45;
+  text-align: left; white-space: normal; word-break: keep-all; overflow-wrap: anywhere;
+}
+.zb-pzoom__note b { color: var(--ink); font-weight: 700; }
 
 /* ───────────── 덮개 ───────────── */
 .sheetwrap {

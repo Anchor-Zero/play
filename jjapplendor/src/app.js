@@ -55,6 +55,44 @@
   const LOCAL_ONLY = Zap.ui.LOCAL_ONLY === true;
   const localApi = /** @type {any} */ (Zap).local;
 
+  /**
+   * 한 화면의 컴퓨터 자리가 수 하나를 두기 전에 기다리는 시간(ms). 한 차례의 여러 수(행동·반납·귀족·차례 넘기기)가 각각 이 간격으로 온다.
+   * 새 수의 움직임은 앞 수의 움직임을 지우고 시작하므로(motion.js transition) 앞 수의 움직임보다 길어야 한다.
+   * 실제 크롬에서 잰 움직임 길이(game/dev/bots-check.js, 2026-10-30): 보석 집기·반납 0.62초, 예약 0.65초, 구매 0.81초(지불 보석 5개까지,
+   * 7개면 1.0초), 귀족 방문 1.9초. 귀족 뒤의 '차례 넘기기'는 움직임을 새로 시작하지 않으므로(paintBoard 의 quiet) 귀족은 두 간격 동안 보인다.
+   * 900 이면 귀족이 내려앉기 직전(1.8초)에 잘리고, 1000 은 여유가 거의 없어 1100 으로 둔다(한 차례 ≈ 2.2초).
+   */
+  const BOT_DELAY_MS = 1100;
+  /** @returns {number} 개발·시험용으로 페이지를 열기 전에 window.__zapBotDelayMs 를 넣으면 그 값을 쓴다 */
+  function botDelay() {
+    const o = /** @type {any} */ (window).__zapBotDelayMs;
+    return typeof o === 'number' && o >= 0 ? o : BOT_DELAY_MS;
+  }
+  /** @returns {any} 컴퓨터 상대 실행부(Zap.bots, 없으면 null) */
+  function botsApi() {
+    const b = /** @type {any} */ (Zap).bots;
+    return b && typeof b.attach === 'function' ? b : null;
+  }
+  /** @returns {Array<{id:string, label:string, desc?:string}>} 고를 수 있는 컴퓨터 스타일(등록 순서) */
+  function botStyles() {
+    const b = botsApi();
+    return b && Array.isArray(b.styles) ? b.styles.filter((/** @type {any} */ s) => s && typeof s.id === 'string') : [];
+  }
+  /**
+   * 한 화면 컴퓨터 자리의 이름 후보: 화면 담당이 직접 지은 흔한 한국 이름 40개(두 글자 32, 세 글자 8).
+   * 판을 열 때 컴퓨터 자리마다 사람 자리 이름·다른 컴퓨터 이름과 겹치지 않게 무작위로 뽑는다(새 판에서는 그대로).
+   * 모두 room.js cleanName 을 통과한다(1~12자, 'random' 아님, 제어 문자 없음).
+   */
+  const BOT_NAMES = [
+    '민준', '서연', '지우', '하준', '서윤', '도윤', '지호', '수아', '예준', '하은', '시우', '지아', '은우', '채원', '현우', '다은',
+    '지민', '수빈', '윤서', '우진', '영희', '철수', '미영', '정훈', '상민', '은정', '성호', '혜진', '동현', '수진', '재민', '경아',
+    '김민수', '이지은', '박현수', '최유진', '정다운', '강하늘', '윤슬기', '조은별',
+  ];
+  /** 한 화면 설정에서 컴퓨터 자리 스타일 '무작위'(기본값). 판을 열 때 Zap.bots.styles 가운데 하나로 바꾼다 */
+  const RANDOM_STYLE = 'random';
+  /** 사건 가운데 판 위 움직임이 없는 것(차례 넘기기·마지막 라운드·자동 패스) */
+  const QUIET_EVENTS = { endTurn: 1, finalRound: 1, autoPass: 1 };
+
   const S = {
     /** @type {'home'|'hostSetup'|'joinSetup'|'localSetup'|'session'} */
     screen: 'home',
@@ -62,10 +100,20 @@
     mode: null,
     /** 한 화면에서 두기: Zap.local.open 이 준 손잡이 (LocalHandle) @type {any} */
     local: null,
-    /** 한 화면: 지금 화면에 보이는 자리 */
+    /** 한 화면: 지금 화면에 보이는 자리(늘 사람 자리. 컴퓨터 차례에는 마지막으로 보이던 사람 자리에 머문다) */
     localSeat: 0,
     localN: 2,
     localNames: ['플레이어 1', '플레이어 2', '플레이어 3', '플레이어 4'],
+    /** 한 화면 설정: 자리마다 'human' | 'bot' */
+    localKinds: ['human', 'human', 'human', 'human'],
+    /** 한 화면 설정: 컴퓨터 자리의 스타일 — 'random'(무작위, 기본값) 또는 Zap.bots.styles 의 id */
+    localStyles: [RANDOM_STYLE, RANDOM_STYLE, RANDOM_STYLE, RANDOM_STYLE],
+    /**
+     * 한 화면 세션: 자리마다 컴퓨터 상대의 실제 스타일 id, 사람 자리는 null (판을 열 때 정함 — '무작위'면 이때 뽑은 것, 판 중에는 바뀌지 않음).
+     * 화면 어디에도 글자로 내지 않고(상대를 눌러 연 확대의 한 줄만), 시험은 이 값을 읽는다.
+     * @type {Array<string|null>}
+     */
+    localBots: [],
     /** 'random' 또는 'seat:<번호>' */
     localFirst: 'random',
     localCurtain: false,
@@ -118,6 +166,16 @@
   let lastSeat = '';
   /** 세션을 구분하는 번호: 나간 뒤 늦게 도착한 옛 연결의 소식을 버리기 위한 것 */
   let sessionNo = 0;
+  /** 한 화면: 붙여 둔 컴퓨터 상대들(Zap.bots.attach 가 돌려준 것). 세션을 닫거나 새로 열 때 모두 멈춘다 @type {Array<{stop:() => void}>} */
+  let botHandles = [];
+  /** 한 화면: 보이는 사람 자리가 방금 바뀌어, 다음에 올리는 화면 정보에서 판을 새로 시작해야 하는지 */
+  let seatMoved = false;
+
+  function stopBots() {
+    const list = botHandles;
+    botHandles = [];
+    for (const b of list) { try { b.stop(); } catch (e) { /* 이미 멈춤 */ } }
+  }
 
   /** @type {any} */ (window).__zap = { mode: null, host: null, client: null };
 
@@ -167,7 +225,9 @@
 
   function resetSession() {
     sessionNo++;
-    S.mode = null; S.host = null; S.client = null; S.local = null; S.localSeat = 0; S.curtain = false;
+    stopBots();
+    seatMoved = false;
+    S.mode = null; S.host = null; S.client = null; S.local = null; S.localSeat = 0; S.localBots = []; S.curtain = false;
     S.room = null; S.view = null; S.events = []; S.boardReset = false; S.watching = false; S.takenOver = ''; S.closingReason = ''; S.announce = false; lastSeat = '';
     if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
     S.overlay = null; S.first = 'random'; S.copied = false; S.joining = false;
@@ -348,20 +408,119 @@
 
   /* ───────────── 한 화면에서 두기 ───────────── */
 
+  /** @param {string} name @returns {string} 이름 비교용(대소문자 무시) */
+  function nameKey(name) { return name.normalize('NFC').toLowerCase(); }
+
+  /** @returns {boolean} 한 화면 설정에서 컴퓨터 자리를 쓸 수 있는지(Zap.bots 와 스타일이 하나 이상 있음) */
+  function canUseBots() { return !!botsApi() && botStyles().length > 0; }
+
+  /**
+   * 한 화면 설정 화면에 보일 자리 이름: 사람 자리는 적은 이름(앞뒤 공백 제거), 컴퓨터 자리는 '컴퓨터'
+   * (컴퓨터 이름은 판을 열 때 drawBotNames 가 정한다).
+   * @returns {string[]}
+   */
+  function localSetupNames() {
+    const canBots = canUseBots();
+    /** @type {string[]} */
+    const out = [];
+    for (let i = 0; i < S.localN; i++) out.push(canBots && S.localKinds[i] === 'bot' ? '컴퓨터' : String(S.localNames[i]).trim());
+    return out;
+  }
+
+  /**
+   * 판을 열 때의 자리 이름: 사람 자리는 그대로, 컴퓨터 자리는 BOT_NAMES 에서 무작위로(사람 이름·먼저 뽑은 컴퓨터 이름과 겹치지 않게,
+   * 비교는 nameKey). 후보가 바닥나면 '컴퓨터 n'.
+   * @param {string[]} humanNames 자리마다 사람 이름(컴퓨터 자리는 무시) @param {boolean[]} bots @returns {string[]}
+   */
+  function drawBotNames(humanNames, bots) {
+    /** @type {Set<string>} */
+    const taken = new Set();
+    bots.forEach((b, i) => { if (!b) taken.add(nameKey(humanNames[i])); });
+    const pool = BOT_NAMES.filter((nm) => !taken.has(nameKey(nm)));
+    return bots.map((b, i) => {
+      if (!b) return humanNames[i];
+      let name = '';
+      if (pool.length) name = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+      else for (let k = 1; !name || taken.has(nameKey(name)); k++) name = '컴퓨터 ' + k;
+      taken.add(nameKey(name));
+      return name;
+    });
+  }
+
+  /** 설정의 스타일 선택을 실제 스타일 id 로: '무작위'(또는 목록에 없는 것)면 셋 가운데 하나를 뽑는다 @param {string} choice @returns {string} */
+  function resolveStyle(choice) {
+    const styles = botStyles();
+    if (choice !== RANDOM_STYLE && styles.some((s) => s.id === choice)) return choice;
+    return styles[Math.floor(Math.random() * styles.length)].id;
+  }
+
+  /**
+   * 한 화면 판에서 상대 칸을 눌러 펼쳤을 때 맨 아래 한 줄(판 셸의 opts.seatNote): 컴퓨터 자리면 '스타일 이름 — 한 줄 설명', 사람 자리는 null.
+   * 스타일은 판 위 다른 어디에도 글자로 보이지 않는다.
+   * @param {number} seat @returns {{title:string, text:string}|null}
+   */
+  function seatNote(seat) {
+    const id = S.local ? S.localBots[seat] : null;
+    if (!id) return null;
+    const st = botStyles().find((s) => s.id === id);
+    return st ? { title: String(st.label || st.id), text: typeof st.desc === 'string' ? st.desc : '' } : null;
+  }
+
+  /** 한 화면 세션에서 그 자리가 컴퓨터인지 @param {number} seat */
+  function isBotSeat(seat) { return !!S.localBots[seat]; }
+
+  /** 한 화면: 가림막을 쓸지(사람 자리가 둘 이상일 때만) */
+  function curtainOn() {
+    return S.localCurtain && S.localBots.filter((b) => !b).length >= 2;
+  }
+
+  /** 판에 넘긴 가린 화면 정보(같은 원래 화면 정보면 같은 객체를 다시 쓴다: 판이 '같은 화면'으로 알아보게) */
+  const masked = { /** @type {PlayerView|null} */ raw: null, /** @type {PlayerView|null} */ out: null };
+
+  /**
+   * 판에 넘길 화면 정보. 한 화면 + 사람 둘 이상 + 가림막 켬 세션에서 컴퓨터 차례 동안에는, 화면에 머물러 있는 사람 자리 자신의
+   * 덱 예약 카드를 남이 보는 꼴({hidden:true, tier}, 판은 뒷면으로 그림)로 바꾼다. 앞 사람이 넘기고 컴퓨터가 두는 사이에
+   * 다음 사람이 그 카드를 보지 않게(가림막은 다음 사람 차례가 와야 뜬다). 판이 끝나면(over) 그대로 보인다.
+   * S.view 는 원래 것 그대로 둔다(시험·판 비교는 원래 화면 정보로).
+   * @param {PlayerView} v @returns {PlayerView}
+   */
+  function boardView(v) {
+    if (!S.local || !curtainOn() || v.phase === 'over' || v.you === null || !isBotSeat(v.current)) return v;
+    const me = v.players[v.you];
+    if (!me || !me.reserved.some((r) => !('hidden' in r) && r.fromDeck)) return v;
+    if (masked.raw === v && masked.out) return masked.out;
+    const reserved = me.reserved.map((r) => ('hidden' in r || !r.fromDeck ? r : { hidden: /** @type {true} */ (true), tier: Zap.data.cardsById[r.id].tier }));
+    const out = Object.assign({}, v, { players: v.players.map((p, i) => (i === v.you ? Object.assign({}, p, { reserved }) : p)) });
+    masked.raw = v; masked.out = out;
+    return out;
+  }
+
   function openLocalSession() {
     const n = S.localN;
-    const names = S.localNames.slice(0, n).map((x) => String(x).trim());
+    const B = botsApi();
+    const canBots = canUseBots();
+    /** @type {boolean[]} */
+    const bots = [];
+    for (let i = 0; i < n; i++) bots.push(canBots && S.localKinds[i] === 'bot');
     S.formError = '';
+    if (bots.every((b) => b)) { S.formError = '사람 자리가 1개 이상 있어야 시작할 수 있습니다.'; render(); return; }
+    // 사람 자리 이름을 먼저 검사하고, 컴퓨터 자리 이름은 그 이름들을 피해 목록에서 뽑는다
+    const typed = localSetupNames();
     for (let i = 0; i < n; i++) {
-      if (nameProblem(names[i])) { S.formError = (i + 1) + '번 자리: ' + nameProblem(names[i]); render(); return; }
+      if (!bots[i] && nameProblem(typed[i])) { S.formError = (i + 1) + '번 자리: ' + nameProblem(typed[i]); render(); return; }
     }
+    const names = drawBotNames(typed, bots);
     const seen = new Set();
-    for (const nm of names) {
-      const key = nm.normalize('NFC').toLowerCase();
-      if (seen.has(key)) { S.formError = '이름이 서로 달라야 합니다: ' + nm; render(); return; }
+    for (let i = 0; i < n; i++) {
+      const key = nameKey(names[i]);
+      if (nameProblem(names[i])) { S.formError = (i + 1) + '번 자리: ' + nameProblem(names[i]); render(); return; }
+      if (seen.has(key)) { S.formError = '이름이 서로 달라야 합니다: ' + names[i]; render(); return; }
       seen.add(key);
     }
     if (!localApi || !Zap.room) { S.formError = '한 화면 모드를 불러오지 못했습니다.'; render(); return; }
+    // 컴퓨터 자리의 실제 스타일: '무작위'면 이때 셋 가운데 하나를 뽑는다
+    /** @type {Array<string|null>} */
+    const botStyle = bots.map((b, i) => (b ? resolveStyle(S.localStyles[i]) : null));
     resetSession();
     const my = sessionNo;
     /** @type {any} */
@@ -376,13 +535,17 @@
     }
     /** @type {ClientConnection[]} */
     const clients = handle.clients;
-    S.mode = 'local'; S.local = handle; S.localSeat = 0; S.client = clients[0]; S.connStatus = 'open'; S.screen = 'session';
-    /** @type {any} */ (window).__zap = { mode: 'local', host: null, client: S.client, local: handle };
+    // 처음 보이는 자리는 첫 사람 자리(판이 시작되면 선 플레이어부터 차례 순서로 첫 사람 자리로 맞춘다 — localSync)
+    const firstHuman = bots.indexOf(false);
+    S.mode = 'local'; S.local = handle; S.localBots = botStyle; S.localSeat = firstHuman; S.client = clients[firstHuman]; S.connStatus = 'open'; S.screen = 'session';
+    /** @type {any} */ (window).__zap = { mode: 'local', host: null, client: S.client, local: handle, state: S };
     clients.forEach((c, i) => {
       c.on('room', () => { if (my === sessionNo) localSync(-1); });
       c.on('state', () => { if (my === sessionNo) localSync(i); });
       c.on('error', (data) => {
         if (my !== sessionNo) return;
+        // 컴퓨터 자리의 오류는 사람 화면에 알리지 않는다(상대 모듈이 다른 수로 다시 고른다). 개발용 콘솔에만 남긴다
+        if (bots[i]) { if (window.console) window.console.warn('[zap.bots] seat ' + i + ' error', data); return; }
         notify(text.errorText((data && data.code) || 'bad_message', data && data.detail));
       });
     });
@@ -391,6 +554,23 @@
       if (my !== sessionNo || !Array.isArray(evs)) return;
       addEvents(evs);
     });
+    // 컴퓨터 자리마다 상대를 붙인다: 판 시작 앞에(첫 화면 정보부터 받게). 상대에게는 그 자리의 연결 하나만 넘긴다(handle·방은 넘기지 않음)
+    if (bots.some((b) => b)) {
+      const delayMs = botDelay();
+      try {
+        for (let i = 0; i < n; i++) {
+          if (!bots[i]) continue;
+          const got = B.attach(clients[i], botStyle[i], { delayMs });
+          if (got && typeof got.stop === 'function') botHandles.push(got);
+        }
+      } catch (e) {
+        if (window.console) window.console.error('[zap.bots] attach', e);
+        leave('localSetup');
+        S.formError = '컴퓨터 상대를 붙이지 못했습니다.';
+        render();
+        return;
+      }
+    }
     const first = S.localFirst.indexOf('seat:') === 0 ? (names[Number(S.localFirst.slice(5))] || 'random') : 'random';
     const r = handle.command({ action: 'start', first });
     if (r && r.ok === false) {
@@ -401,9 +581,35 @@
     render();
   }
 
+  /** 한 화면: 새 판인지(처음 받은 화면 정보, 결과 뒤 새 판, 차례 수가 줄어듦) @param {PlayerView} v */
+  function freshGame(v) {
+    const p = S.view;
+    return !p || (p.phase === 'over' && v.phase !== 'over') || v.turnsTaken < p.turnsTaken;
+  }
+
   /**
-   * 한 화면: 자리 연결들이 받은 화면 정보 가운데 "지금 차례인 자리"의 것을 화면에 올린다.
-   * 수 하나에 자리마다 화면 정보가 따로 오므로, 차례가 넘어간 자리의 정보가 도착했을 때 그 자리로 바꾼다.
+   * 한 화면: 이 화면 정보로 보면 어느 사람 자리를 보여야 하는지.
+   * 사람 차례면 그 자리, 컴퓨터 차례면 지금 보이는 사람 자리에 머문다(상대의 비공개 정보가 보이지 않게).
+   * 새 판이 컴퓨터부터 시작하면 선 플레이어부터 차례 순서로 처음 오는 사람 자리.
+   * @param {PlayerView} v @returns {number}
+   */
+  function wantSeat(v) {
+    if (v.phase === 'over') return S.localSeat;
+    if (!isBotSeat(v.current)) return v.current;
+    if (freshGame(v)) {
+      for (let k = 1; k <= v.numPlayers; k++) {
+        const s = (v.current + k) % v.numPlayers;
+        if (!isBotSeat(s)) return s;
+      }
+    }
+    return S.localSeat;
+  }
+
+  /**
+   * 한 화면: 자리 연결들이 받은 화면 정보 가운데 "보이는 사람 자리"의 것을 화면에 올린다.
+   * 수 하나에 자리마다 화면 정보가 따로 오므로, 차례가 넘어간 사람 자리의 정보가 도착했을 때 그 자리로 바꾼다.
+   * 컴퓨터 차례에는 보이는 사람 자리에 머물며 그 자리의 화면 정보를 그대로 올린다(사건과 함께 → 움직임·소리).
+   * 판을 새로 시작(boardReset)·가림막·차례 알림은 보이는 사람 자리가 바뀔 때(와 새 판)만 건다.
    * @param {number} from  방금 화면 정보를 받은 자리 (-1 이면 방 정보만 바뀜)
    */
   function localSync(from) {
@@ -412,11 +618,13 @@
     const clients = S.local.clients;
     if (from >= 0) {
       const lv = clients[from].view();
-      if (lv && lv.phase !== 'over' && lv.current !== S.localSeat) {
-        const tv = clients[lv.current] ? clients[lv.current].view() : null;
+      const want = lv ? wantSeat(lv) : S.localSeat;
+      if (lv && want !== S.localSeat && clients[want]) {
+        const tv = clients[want].view();
         if (tv && tv.current === lv.current && tv.turnsTaken === lv.turnsTaken && tv.phase === lv.phase) {
-          S.localSeat = lv.current;
-          S.client = clients[S.localSeat];
+          S.localSeat = want;
+          S.client = clients[want];
+          seatMoved = true;
           /** @type {any} */ (window).__zap.client = S.client;
         }
       }
@@ -425,16 +633,20 @@
     const room = S.client.room();
     if (room) onRoom(room);
     const v = S.client.view();
-    // 보이는 자리의 정보가 아직 옛 차례 것이면(곧 그 자리로 바뀔 것이므로) 올리지 않는다
-    if (v && v !== S.view && (v.phase === 'over' || v.current === S.localSeat)) {
+    // 보이는 자리의 정보가 다른 사람 자리의 차례 것이면(곧 그 자리로 바뀔 것이므로) 올리지 않는다
+    if (v && v !== S.view && (v.phase === 'over' || wantSeat(v) === S.localSeat)) {
       const prev = S.view;
-      const newTurn = !prev || prev.phase === 'over' || prev.current !== v.current || v.turnsTaken < prev.turnsTaken;
-      if (newTurn && v.phase !== 'over') {
-        // 다른 자리의 시점으로 바뀐다: 판 화면을 움직임 없이 새로 시작한다(앞 사람의 고르던 것·확대가 남지 않게)
+      const mine = v.current === S.localSeat;
+      if (v.phase !== 'over' && (seatMoved || freshGame(v))) {
+        // 다른 사람 자리의 시점으로 바뀌거나 새 판: 판 화면을 움직임 없이 새로 시작한다(앞 사람의 고르던 것·확대가 남지 않게)
         S.boardReset = true;
-        S.curtain = S.localCurtain;
-        S.announce = v.phase === 'action';
+        S.curtain = curtainOn() && mine;
+        S.announce = mine && v.phase === 'action';
+      } else if (mine && v.phase === 'action' && prev && (prev.current !== v.current || prev.turnsTaken !== v.turnsTaken)) {
+        // 컴퓨터 차례 뒤 같은 사람 자리로 차례가 돌아옴: 판은 이어 그리고 차례 시작만 알린다
+        S.announce = true;
       }
+      seatMoved = false;
       if (v.phase === 'over') S.curtain = false;
       onView(v);
     }
@@ -606,14 +818,19 @@
     if (!force && sameHost && S.view === lastBoard.view && sig === lastBoard.sig) return;
     const newView = S.view !== lastBoard.view;
     const reset = !sameHost || S.boardReset;
-    const events = sameHost && newView && !reset && S.events.length ? S.events.slice() : undefined;
-    if (newView || reset) S.events = [];
+    let events = sameHost && newView && !reset && S.events.length ? S.events.slice() : undefined;
+    // 한 화면 + 컴퓨터: 움직임이 없는 사건(차례 넘기기·마지막 라운드·자동 패스)만 온 갱신은 움직임을 새로 시작하지 않고 그리기만 한다.
+    // 새 움직임은 앞 움직임을 지우고 시작하므로, 컴퓨터가 산 카드·받은 귀족이 날아가는 중에 바로 이어 온 '차례 넘기기'가 그것을 자르지 않게.
+    // 사건은 버리지 않고 다음 갱신에 함께 넘긴다(판의 최근 일 기록용). 그 사이 사람 차례가 시작되면 차례 알림은 announceTurn 이 맡는다.
+    const quiet = !!(S.local && events && S.localBots.some((b) => b) && events.every((e) => /** @type {any} */ (QUIET_EVENTS)[e.type]));
+    if (quiet) events = undefined;
+    if ((newView || reset) && !quiet) S.events = [];
     S.boardReset = false;
     // 한 화면: 새 차례를 새로 그릴 때(가림막을 걷은 뒤 포함) 차례 시작 빛남·알림 소리
     const announceTurn = !!(S.local && S.announce && S.view.phase === 'action' && S.view.current === S.view.you);
     S.announce = false;
     lastBoard.host = host; lastBoard.view = S.view; lastBoard.sig = sig;
-    V2.board.render(host, S.view, {
+    V2.board.render(host, boardView(S.view), {
       skin: sk,
       names: info.names,
       connected: info.connected,
@@ -622,6 +839,8 @@
       reset,
       events,
       announceTurn,
+      // 한 화면: 상대 칸을 눌러 펼치면 컴퓨터 자리만 '스타일 이름 — 설명' 한 줄(판 위 다른 곳에는 스타일이 없다)
+      seatNote: S.local ? seatNote : undefined,
       on: {
         move: sendMove,
         newGame: admin_ ? () => { S.overlay = 'newgame'; render(); } : undefined,
@@ -831,12 +1050,20 @@
       }, { localOnly: LOCAL_ONLY, hasLocal: !!(localApi && Zap.room), skins: skinChoices(), skin: S.skin }));
     }
     if (S.screen === 'localSetup') {
+      const styles = botStyles();
+      const canBots = canUseBots();
+      // 고른 스타일이 목록에 없으면(스타일 파일이 바뀜) 무작위로
+      for (let i = 0; i < 4; i++) if (S.localStyles[i] !== RANDOM_STYLE && !styles.some((s) => s.id === S.localStyles[i])) S.localStyles[i] = RANDOM_STYLE;
       return h('div.app.app--front.' + skinCls, { 'data-key': 'app-front' }, panels.localSetup({
-        n: S.localN, names: S.localNames, first: S.localFirst, curtain: S.localCurtain, error: S.formError,
+        n: S.localN, names: S.localNames, kinds: S.localKinds, styleIds: S.localStyles, styles: styles.map((s) => ({ id: s.id, label: String(s.label || s.id) })),
+        shownNames: localSetupNames(), canBots,
+        first: S.localFirst, curtain: S.localCurtain, error: S.formError,
       }, {
         count: (n) => { S.localN = n; if (S.localFirst !== 'random' && Number(S.localFirst.slice(5)) >= n) S.localFirst = 'random'; S.formError = ''; render(); },
         name: (i, v) => { S.localNames[i] = v; },
         nameDone: () => render(),
+        kind: (i, v) => { S.localKinds[i] = v === 'bot' ? 'bot' : 'human'; S.formError = ''; render(); },
+        style: (i, v) => { S.localStyles[i] = v || RANDOM_STYLE; render(); },
         first: (v) => { S.localFirst = v; },
         curtain: (v) => { S.localCurtain = v; render(); },
         start: openLocalSession,
