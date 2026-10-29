@@ -1,0 +1,273 @@
+/* 생성됨: tools/sync-v2.js 가 design/ 에서 복사한 파일 — 직접 고치지 말 것(원본을 고친 뒤 다시 복사). */
+/*
+ * 짭플렌더 v2 시안 — 방향 B 상감풍 스킨의 모양. 그림(모양·색 조각)은 skin.js, 여기는 크기·재질·그림자·움직임.
+ * 모든 규칙은 .skin-intarsia 아래. 채도 높은 색은 보석 색(칩·보너스 포함)에만 쓴다.
+ * --ix-grain(나무 결), --ix-nap(벨벳 보풀), --ix-damask(석류 무늬)는 skin.js 가 한 번 만들어 넣는다.
+ */
+
+/* ───────── 테마 값 (셸이 패널·버튼·글자를 칠할 때 쓴다) ───────── */
+.skin-intarsia {
+  --table:
+    radial-gradient(120% 80% at 50% 38%, rgba(255, 240, 200, .075), rgba(255, 240, 200, 0) 62%),
+    radial-gradient(140% 120% at 50% 50%, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, .5) 100%),
+    var(--ix-nap, none) 0 0 / 128px 128px,
+    var(--ix-damask, none) 0 0 / 176px 252px,
+    #20241b;
+  --panel: #262419;
+  --panel-edge: #7b6839;
+  --ink: #ece3cd;
+  --ink-soft: #a79d86;
+  --accent: #c9a75c;
+  --accent-ink: #1d170b;
+  --glow: #f3d78e;
+  --font-display: 'IX Cinzel', 'Noto Serif KR', 'Nanum Myeongjo', serif;
+  --font-number: 'IX Cinzel', 'Noto Serif KR', Georgia, serif;
+  --font-body: 'IX Cormorant', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+}
+
+/* ───────── 보석 ───────── */
+.skin-intarsia .ix-gem { display: block; flex: none; overflow: visible; }
+.skin-intarsia .ix-gem__glint { transform: translateX(0); }
+.skin-intarsia .is-glint .ix-gem__glint,
+.skin-intarsia .ix-gem.is-glint .ix-gem__glint { animation: ix-glint .8s cubic-bezier(.3, .1, .3, 1) 1 both; }
+@keyframes ix-glint { from { transform: translateX(0); } to { transform: translateX(210px); } }
+
+/* ───────── 틀 없는 큰 숫자 (점수 계열) ───────── */
+.skin-intarsia .ix-num { display: block; overflow: visible; }
+.skin-intarsia .ix-num text { font: 900 38px var(--font-number); }
+.skin-intarsia .ix-num__s, .skin-intarsia text.ix-num__s { font: 900 38px var(--font-number); fill: #000; stroke: #000; stroke-width: 5.5px; stroke-linejoin: round; opacity: .5; }
+.skin-intarsia .ix-num__o, .skin-intarsia text.ix-num__o { font: 900 38px var(--font-number); fill: #1a1107; stroke: #1a1107; stroke-width: 5.5px; stroke-linejoin: round; }
+.skin-intarsia .ix-num__f, .skin-intarsia text.ix-num__f { font: 900 38px var(--font-number); fill: url(#ix-numfill); stroke: #fff8dc; stroke-width: .5px; }
+
+.skin-intarsia .ix-points { display: inline-block; height: var(--px); line-height: 0; }
+.skin-intarsia .ix-points .ix-num { height: 100%; width: auto; }
+.skin-intarsia .ix-points.is-zero { opacity: .55; }
+
+/* ───────── 칩 ─────────
+ * --d 지름. 테두리 고리에 문장학 해칭(금 점, 흰 무늬 없음, 빨강 세로줄, 파랑 가로줄, 검정 격자, 초록 사선)을 얕게. */
+/* 색끼리 밝기 차이를 벌려 흑백에서도 구분되게 한다(면의 CIELAB L*: 흰 90↑, 황금 72, 초록 60, 빨강 46, 파랑 32, 검정 18↓).
+ * 밝은 면(흰·황금·초록)은 어두운 숫자, 어두운 면(빨강·파랑·검정)은 흰 숫자 — 숫자 대비 4.5:1 이상. tools/lum.mjs 로 잰다. */
+.skin-intarsia .ix-chip--w, .skin-intarsia .ix-bonus--w { --c: #f8f6f0; --c-hi: #ffffff; --c-lo: #e6e3d8; --c-in: #fbfaf5; --edge: #8a8576; --rim: rgba(255, 255, 255, .95); --num: #17140f; --numsh: rgba(255, 255, 255, .85); --well: #33291d; --ins: rgba(60, 50, 35, .45); --hatch: none; --gloss-d: .06; --ring-d: .1; }
+.skin-intarsia .ix-chip--u, .skin-intarsia .ix-bonus--u { --c: #193ca8; --c-hi: #3566d6; --c-lo: #0e2779; --c-in: #17379c; --edge: #081848; --rim: rgba(132, 172, 255, .62); --num: #ffffff; --numsh: #030c36; --well: #e9dfc7; --ins: rgba(255, 255, 255, .5); --gloss-l: .22;
+  --hatch: repeating-linear-gradient(180deg, rgba(3, 12, 60, .34) 0 calc(var(--d) * .03), transparent 0 calc(var(--d) * .1)); }
+.skin-intarsia .ix-chip--g, .skin-intarsia .ix-bonus--g { --c: #22ad6e; --c-hi: #66dfa5; --c-lo: #13895a; --c-in: #20a868; --edge: #064428; --rim: rgba(196, 255, 226, .8); --num: #04170d; --numsh: rgba(196, 255, 224, .7); --well: #e9dfc7; --ins: rgba(255, 255, 255, .5);
+  --hatch: repeating-linear-gradient(45deg, rgba(2, 60, 34, .3) 0 calc(var(--d) * .03), transparent 0 calc(var(--d) * .1)); }
+.skin-intarsia .ix-chip--r, .skin-intarsia .ix-bonus--r { --c: #d32a3d; --c-hi: #f36a72; --c-lo: #a51a2a; --c-in: #cc2538; --edge: #5a0a14; --rim: rgba(255, 196, 192, .78); --num: #ffffff; --numsh: #3d040c; --well: #e9dfc7; --ins: rgba(255, 255, 255, .5);
+  --hatch: repeating-linear-gradient(90deg, rgba(70, 3, 12, .32) 0 calc(var(--d) * .03), transparent 0 calc(var(--d) * .1)); }
+.skin-intarsia .ix-chip--k, .skin-intarsia .ix-bonus--k { --c: #15161a; --c-hi: #2e3038; --c-lo: #040405; --c-in: #101114; --edge: #000000; --rim: rgba(176, 180, 194, .5); --num: #ffffff; --numsh: #000000; --well: #e9dfc7; --ins: rgba(255, 255, 255, .34); --gloss-l: .18;
+  --hatch: repeating-linear-gradient(90deg, rgba(255, 255, 255, .09) 0 calc(var(--d) * .025), transparent 0 calc(var(--d) * .1)), repeating-linear-gradient(180deg, rgba(255, 255, 255, .09) 0 calc(var(--d) * .025), transparent 0 calc(var(--d) * .1)); }
+.skin-intarsia .ix-chip--gold { --c: #e3ba4c; --c-hi: #fceaa2; --c-lo: #b58a27; --c-in: #dcb242; --edge: #5b4109; --rim: rgba(255, 244, 196, .85); --num: #1f1605; --numsh: rgba(255, 240, 190, .8); --well: #33291d; --ins: rgba(70, 50, 8, .5);
+  --hatch: radial-gradient(circle, rgba(70, 48, 4, .28) 0 26%, transparent 30%) 0 0 / calc(var(--d) * .12) calc(var(--d) * .12); }
+
+.skin-intarsia .ix-chip {
+  --d: 24px;
+  position: relative; display: inline-grid; place-items: center; flex: none; box-sizing: border-box;
+  width: var(--d); height: var(--d); border-radius: 50%;
+  background:
+    radial-gradient(circle closest-side, transparent 57%, rgba(0, 0, 0, .4) 60%, rgba(255, 255, 255, .22) 64%, transparent 67%),
+    radial-gradient(circle closest-side, var(--c-in) 0 59%, transparent 61%),
+    radial-gradient(circle at 34% 26%, var(--c-hi), var(--c) 52%, var(--c-lo) 100%);
+  box-shadow:
+    inset 0 0 0 calc(var(--d) * .045) var(--rim),
+    inset 0 0 0 calc(var(--d) * .075) rgba(0, 0, 0, var(--ring-d, .22)),
+    0 0 0 max(.6px, calc(var(--d) * .02)) rgba(0, 0, 0, .75),
+    0 calc(var(--d) * .075) 0 var(--edge),
+    0 calc(var(--d) * .075) 0 max(.6px, calc(var(--d) * .02)) rgba(0, 0, 0, .8),
+    0 calc(var(--d) * .14) calc(var(--d) * .12) rgba(0, 0, 0, .6);
+}
+.skin-intarsia .ix-chip::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--hatch);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 0 64%, #000 66% 91%, transparent 93%);
+  mask: radial-gradient(circle closest-side, transparent 0 64%, #000 66% 91%, transparent 93%);
+}
+.skin-intarsia .ix-chip::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: linear-gradient(140deg, rgba(255, 255, 255, var(--gloss-l, .34)), rgba(255, 255, 255, 0) 38%, rgba(0, 0, 0, 0) 62%, rgba(0, 0, 0, var(--gloss-d, .22)));
+}
+.skin-intarsia .ix-chip__n {
+  position: relative; z-index: 1; font: 900 calc(var(--d) * .72)/1 var(--font-number); color: var(--num);
+  text-shadow: 0 0 calc(var(--d) * .05) var(--numsh), 0 calc(var(--d) * .035) 0 var(--numsh), 0 0 calc(var(--d) * .12) var(--numsh);
+  transform: translateY(-2%); letter-spacing: 0;
+}
+
+/* 더미 */
+.skin-intarsia .ix-stack { --d: 44px; display: inline-flex; flex-direction: column; align-items: center; gap: calc(var(--d) * .1); flex: none; }
+.skin-intarsia .ix-stack__pile { position: relative; width: var(--d); }
+.skin-intarsia .ix-stack .ix-chip, .skin-intarsia .ix-stack .ix-chip__wall { --d: inherit; }
+.skin-intarsia .ix-chip--top { position: absolute; left: 0; box-shadow: inset 0 0 0 calc(var(--d) * .045) var(--rim), inset 0 0 0 calc(var(--d) * .075) rgba(0, 0, 0, var(--ring-d, .22)), 0 0 0 max(.6px, calc(var(--d) * .018)) rgba(0, 0, 0, .8); }
+.skin-intarsia .ix-chip__well {
+  position: absolute; inset: 16%; border-radius: 50%;
+  background: var(--ix-grain, none) 0 0 / 80px 80px, radial-gradient(circle at 40% 30%, color-mix(in srgb, var(--well) 88%, #fff), var(--well) 70%);
+  box-shadow: inset 0 calc(var(--d) * .03) calc(var(--d) * .05) rgba(0, 0, 0, .65), 0 0 0 calc(var(--d) * .02) rgba(0, 0, 0, .5), 0 calc(var(--d) * .015) 0 calc(var(--d) * .02) rgba(255, 255, 255, .25);
+}
+.skin-intarsia .ix-chip--top .ix-gem { position: relative; z-index: 1; transform: translateY(4%); }
+.skin-intarsia .ix-chip__wall {
+  position: absolute; left: 0; width: var(--d); height: var(--d); border-radius: 50%; box-sizing: border-box;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 16%, var(--ins) 16% 24%, transparent 24% 33.3%),
+    linear-gradient(90deg, var(--edge), var(--c-lo) 22%, var(--c) 48%, var(--c-lo) 78%, var(--edge));
+  box-shadow: inset 0 calc(var(--d) * -.022) 0 rgba(0, 0, 0, .7), 0 0 0 max(.5px, calc(var(--d) * .015)) rgba(0, 0, 0, .7);
+}
+.skin-intarsia .ix-stack__shadow { position: absolute; left: 2%; right: -14%; bottom: -9%; height: 62%; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .7), rgba(0, 0, 0, 0)); }
+.skin-intarsia .ix-stack__ghost {
+  position: absolute; left: 0; bottom: 0; width: var(--d); height: var(--d); border-radius: 50%; box-sizing: border-box; display: grid; place-items: center;
+  border: max(1px, calc(var(--d) * .03)) dashed rgba(236, 227, 205, .26); background: rgba(0, 0, 0, .16); box-shadow: inset 0 calc(var(--d) * .04) calc(var(--d) * .08) rgba(0, 0, 0, .5);
+}
+.skin-intarsia .ix-stack__ghost .ix-gem { opacity: .2; filter: grayscale(.7); }
+.skin-intarsia .ix-stack__n { font: 700 calc(var(--d) * .5)/1 var(--font-number); color: var(--ink); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
+.skin-intarsia .ix-stack.is-empty .ix-stack__n { opacity: .38; font-size: calc(var(--d) * .38); }
+
+/* 보너스: 작은 카드(모서리 둥근 사각) */
+.skin-intarsia .ix-bonus {
+  --px: 32px; --d: var(--px);
+  position: relative; display: inline-grid; place-items: center; flex: none; box-sizing: border-box;
+  width: calc(var(--px) * .8); height: var(--px); border-radius: calc(var(--px) * .15);
+  background: var(--ix-grain, none) 0 0 / 90px 90px, linear-gradient(155deg, var(--c-hi), var(--c) 42%, var(--c-lo));
+  box-shadow:
+    inset 0 0 0 calc(var(--px) * .03) rgba(0, 0, 0, .55),
+    inset 0 0 0 calc(var(--px) * .07) var(--rim),
+    inset 0 0 0 calc(var(--px) * .09) rgba(0, 0, 0, .3),
+    0 calc(var(--px) * .06) 0 var(--edge),
+    0 calc(var(--px) * .12) calc(var(--px) * .1) rgba(0, 0, 0, .55);
+  transition: transform .16s ease, opacity .16s ease;
+}
+.skin-intarsia .ix-bonus.is-pile { box-shadow:
+    inset 0 0 0 calc(var(--px) * .03) rgba(0, 0, 0, .55), inset 0 0 0 calc(var(--px) * .07) var(--rim), inset 0 0 0 calc(var(--px) * .09) rgba(0, 0, 0, .3),
+    0 calc(var(--px) * .05) 0 var(--edge), 0 calc(var(--px) * .07) 0 rgba(0, 0, 0, .8), 0 calc(var(--px) * .12) 0 var(--c-lo), 0 calc(var(--px) * .14) 0 rgba(0, 0, 0, .8),
+    0 calc(var(--px) * .2) calc(var(--px) * .12) rgba(0, 0, 0, .55); }
+.skin-intarsia .ix-bonus.is-pile2 { box-shadow:
+    inset 0 0 0 calc(var(--px) * .03) rgba(0, 0, 0, .55), inset 0 0 0 calc(var(--px) * .07) var(--rim), inset 0 0 0 calc(var(--px) * .09) rgba(0, 0, 0, .3),
+    0 calc(var(--px) * .05) 0 var(--edge), 0 calc(var(--px) * .07) 0 rgba(0, 0, 0, .8), 0 calc(var(--px) * .12) 0 var(--c-lo), 0 calc(var(--px) * .14) 0 rgba(0, 0, 0, .8),
+    0 calc(var(--px) * .19) 0 var(--edge), 0 calc(var(--px) * .21) 0 rgba(0, 0, 0, .8), 0 calc(var(--px) * .27) calc(var(--px) * .12) rgba(0, 0, 0, .55); }
+.skin-intarsia .ix-bonus__n { font: 900 calc(var(--px) * .68)/1 var(--font-number); color: var(--num); text-shadow: 0 0 calc(var(--px) * .05) var(--numsh), 0 calc(var(--px) * .035) 0 var(--numsh), 0 0 calc(var(--px) * .12) var(--numsh); }
+.skin-intarsia .ix-bonus.is-zero { opacity: .34; transform: scale(.7); filter: saturate(.55); box-shadow: inset 0 0 0 calc(var(--px) * .03) rgba(0, 0, 0, .55), inset 0 0 0 calc(var(--px) * .07) var(--rim); }
+
+/* ───────── 카드 ─────────
+ * 바깥 요소(.ix-card)는 자리만 잡고, 보이는 몸(.ix-card__body)이 들린다 — 셸이 바깥 요소를 transform 으로 옮겨도 겹치지 않는다. */
+.skin-intarsia .ix-card, .skin-intarsia .ix-back, .skin-intarsia .ix-deck, .skin-intarsia .ix-slot {
+  width: var(--card-w); height: calc(var(--card-w) * 1.4); position: relative; flex: none; box-sizing: border-box;
+}
+.skin-intarsia .ix-card, .skin-intarsia .ix-back, .skin-intarsia .ix-deck { container: ix-card / inline-size; }
+.skin-intarsia .ix-card__body, .skin-intarsia .ix-back__body {
+  position: absolute; inset: 0; border-radius: 6cqw; overflow: hidden; background: #3a2f22;
+  box-shadow:
+    0 0 0 max(.5px, .5cqw) #0d0905,
+    0 1.5cqw 0 #6a583d,
+    0 2.3cqw 0 max(.5px, .5cqw) #0d0905,
+    0 3.6cqw 2cqw rgba(0, 0, 0, .5),
+    0 7cqw 9cqw rgba(0, 0, 0, .42);
+  transition: transform .18s cubic-bezier(.2, .8, .3, 1.25), box-shadow .18s ease;
+}
+.skin-intarsia .ix-card__art, .skin-intarsia .ix-back__art { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.skin-intarsia .ix-card__sheen { position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 .7cqw 0 rgba(255, 244, 214, .3), inset .5cqw 0 0 rgba(255, 244, 214, .1), inset 0 -1cqw 1.4cqw rgba(0, 0, 0, .4); }
+.skin-intarsia .ix-card__top { position: absolute; left: 0; right: 0; top: 0; height: 37cqw; pointer-events: none; }
+.skin-intarsia .ix-card__pts { position: absolute; left: 4.2cqw; top: 3.4cqw; height: 31cqw; width: auto; }
+.skin-intarsia .ix-card__gem { position: absolute; right: 4.4cqw; top: 3.6cqw; width: 32cqw; height: 32cqw; }
+.skin-intarsia .ix-card__costs {
+  position: absolute; left: 5.4cqw; bottom: 6.4cqw; display: grid; grid-template-columns: auto auto; justify-content: start; gap: 2.2cqw 1.8cqw; pointer-events: none;
+}
+.skin-intarsia .ix-card__costs--n1, .skin-intarsia .ix-card__costs--n2 { grid-template-columns: auto; }
+.skin-intarsia .ix-card__costs--n3 > :first-child { grid-column: 1 / span 2; justify-self: start; }
+.skin-intarsia .ix-card__costs .ix-chip { --d: 25cqw; }
+
+@media (hover: hover) {
+  .skin-intarsia .ix-card:hover .ix-card__body { transform: translateY(-3.6cqw) scale(1.025);
+    box-shadow: 0 0 0 max(.5px, .5cqw) #0d0905, 0 1.5cqw 0 #6a583d, 0 2.3cqw 0 max(.5px, .5cqw) #0d0905, 0 7cqw 4cqw rgba(0, 0, 0, .4), 0 14cqw 14cqw rgba(0, 0, 0, .45); }
+}
+.skin-intarsia .ix-card.is-lifted .ix-card__body { transform: translateY(-3.6cqw) scale(1.025);
+  box-shadow: 0 0 0 max(.5px, .5cqw) #0d0905, 0 1.5cqw 0 #6a583d, 0 2.3cqw 0 max(.5px, .5cqw) #0d0905, 0 7cqw 4cqw rgba(0, 0, 0, .4), 0 14cqw 14cqw rgba(0, 0, 0, .45); }
+
+/* 작은 카드: 세부를 감추고 비용 칩을 키운다 */
+@container ix-card (max-width: 112px) {
+  .skin-intarsia .ix-fine { display: none; }
+  .skin-intarsia .ix-card__costs { left: 4.6cqw; bottom: 6cqw; gap: 1.6cqw 1.2cqw; }
+  .skin-intarsia .ix-card__costs .ix-chip { --d: 27.5cqw; }
+  .skin-intarsia .ix-card__costs .ix-chip__n { font-size: calc(var(--d) * .76); }
+  .skin-intarsia .ix-card__pts { height: 33cqw; left: 3.4cqw; top: 2.6cqw; }
+  .skin-intarsia .ix-card__gem { width: 34cqw; height: 34cqw; right: 3.4cqw; top: 2.6cqw; }
+}
+
+/* 뒷면·덱 */
+.skin-intarsia .ix-deck__side {
+  position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--kk) * 11cqw + 10cqw); border-radius: 0 0 6cqw 6cqw;
+  background: repeating-linear-gradient(to bottom, #cdbd97 0 .9px, #54442e .9px 1.9px);
+  box-shadow: 0 0 0 max(.5px, .5cqw) #0d0905, 0 3cqw 2cqw rgba(0, 0, 0, .55), 0 8cqw 9cqw rgba(0, 0, 0, .45);
+}
+.skin-intarsia .ix-deck__side::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(90deg, rgba(0, 0, 0, .45), rgba(0, 0, 0, 0) 18%, rgba(255, 255, 255, .12) 50%, rgba(0, 0, 0, 0) 80%, rgba(0, 0, 0, .5)); }
+.skin-intarsia .ix-deck__top { position: absolute; left: 0; top: 0; transform: translateY(calc(var(--kk) * -11cqw)); }
+.skin-intarsia .ix-deck__top .ix-back__body { box-shadow: 0 0 0 max(.5px, .5cqw) #0d0905, 0 1.2cqw 0 #6a583d; }
+.skin-intarsia .ix-deck__n {
+  position: absolute; left: 50%; top: 67.5%; transform: translate(-50%, -50%); z-index: 1; box-sizing: border-box;
+  min-width: 46cqw; height: 27cqw; padding: 0 5cqw; display: grid; place-items: center; border-radius: 3.4cqw;
+  background: linear-gradient(160deg, #f6e4a6, #d2ab4e 45%, #9a7422);
+  box-shadow: inset 0 0 0 .8cqw #4f3a0b, inset 0 0 0 1.7cqw #f8e7ae, inset 0 0 0 2.2cqw rgba(79, 58, 11, .6), 0 1.4cqw 0 #3a2a07, 0 2.6cqw 2.4cqw rgba(0, 0, 0, .6);
+}
+.skin-intarsia .ix-deck__n b { font: 900 20cqw/1 var(--font-number); color: #241a06; text-shadow: 0 .5cqw 0 rgba(255, 244, 200, .7); }
+.skin-intarsia .ix-slot { border-radius: calc(var(--card-w) * .06); background: rgba(0, 0, 0, .2);
+  box-shadow: inset 0 calc(var(--card-w) * .02) calc(var(--card-w) * .05) rgba(0, 0, 0, .6), inset 0 0 0 1px rgba(236, 227, 205, .09), 0 1px 0 rgba(255, 255, 255, .05); }
+
+/* ───────── 귀족 ───────── */
+.skin-intarsia .ix-noble { width: var(--noble-w); height: calc(var(--noble-w) * 1.15); position: relative; flex: none; container: ix-noble / inline-size; }
+.skin-intarsia .ix-noble__body { position: absolute; inset: 0; filter: drop-shadow(0 2.2cqw 1.6cqw rgba(0, 0, 0, .6)); transition: transform .18s cubic-bezier(.2, .8, .3, 1.25); }
+.skin-intarsia .ix-noble__art { width: 100%; height: 100%; display: block; overflow: visible; }
+.skin-intarsia .ix-noble__reqn { font: 900 15.5px var(--font-number); fill: #fff; stroke: #06080c; stroke-width: 2.4px; paint-order: stroke; stroke-linejoin: round; }
+.skin-intarsia .ix-noble__reqn--w { fill: #17140f; stroke: #fff; stroke-width: 1.6px; }
+.skin-intarsia .ix-noble__motto { font: 700 5px var(--font-display); fill: #2a1c0c; letter-spacing: .5px; }
+@media (hover: hover) { .skin-intarsia .ix-noble:hover .ix-noble__body { transform: translateY(-2.4cqw) scale(1.02); } }
+.skin-intarsia .ix-noble.is-lifted .ix-noble__body { transform: translateY(-2.4cqw) scale(1.02); }
+@container ix-noble (max-width: 112px) {
+  .skin-intarsia .ix-fine { display: none; }
+  /* 작은 귀족: 조건 숫자를 키운다(그림 좌표 단위, 사각형 20.4 안) */
+  .skin-intarsia .ix-noble__reqn { font-size: 19.4px; stroke-width: 2.6px; transform: translateY(1.5px); }
+  .skin-intarsia .ix-noble__reqn--w, .skin-intarsia .ix-noble__reqn--g { stroke-width: 1.8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skin-intarsia .ix-card__body, .skin-intarsia .ix-noble__body, .skin-intarsia .ix-bonus { transition: none; }
+  .skin-intarsia .is-glint .ix-gem__glint, .skin-intarsia .ix-gem.is-glint .ix-gem__glint { animation: none; }
+}
+
+/* 귀족 조건 숫자: 초록 면은 밝아서 어두운 숫자를 쓴다 */
+.skin-intarsia .ix-noble__reqn--g { fill: #04170d; stroke: #c4ffe0; stroke-width: 1.6px; }
+
+/* 흰 보너스 사각은 결과 테두리 그늘을 옅게 해 흰빛을 지킨다 */
+.skin-intarsia .ix-bonus--w { background: linear-gradient(155deg, #ffffff, #f8f6f0 42%, #ebe8de); }
+
+/* ───────── 승자 메달 ─────────
+ * --px 메달 지름. 위: 리본+메달(폭 px, 높이 px×1.46), 아래: 나무 상감·놋쇠 이름판(이름 길이에 따라 넓어짐). */
+.skin-intarsia .ix-medal { --px: 160px; display: inline-flex; flex-direction: column; align-items: center; flex: none; gap: 0; }
+.skin-intarsia .ix-medal__art { display: block; width: var(--px); height: calc(var(--px) * 1.46); overflow: visible;
+  filter: drop-shadow(0 calc(var(--px) * .035) calc(var(--px) * .04) rgba(0, 0, 0, .6)); }
+.skin-intarsia .ix-medal__plate {
+  position: relative; box-sizing: border-box; margin-top: calc(var(--px) * -.02);
+  min-width: calc(var(--px) * 1.3); max-width: calc(var(--px) * 1.62);
+  padding: calc(var(--px) * .07) calc(var(--px) * .1) calc(var(--px) * .06);
+  display: flex; flex-direction: column; align-items: center; gap: calc(var(--px) * .015);
+  border-radius: calc(var(--px) * .045);
+  background:
+    radial-gradient(circle at calc(var(--px) * .055) calc(var(--px) * .055), #f6e2a0 0 calc(var(--px) * .012), #7a5813 calc(var(--px) * .018), transparent calc(var(--px) * .021)),
+    radial-gradient(circle at calc(100% - var(--px) * .055) calc(var(--px) * .055), #f6e2a0 0 calc(var(--px) * .012), #7a5813 calc(var(--px) * .018), transparent calc(var(--px) * .021)),
+    radial-gradient(circle at calc(var(--px) * .055) calc(100% - var(--px) * .055), #f6e2a0 0 calc(var(--px) * .012), #7a5813 calc(var(--px) * .018), transparent calc(var(--px) * .021)),
+    radial-gradient(circle at calc(100% - var(--px) * .055) calc(100% - var(--px) * .055), #f6e2a0 0 calc(var(--px) * .012), #7a5813 calc(var(--px) * .018), transparent calc(var(--px) * .021)),
+    var(--ix-grain, none) 0 0 / 120px 120px,
+    linear-gradient(175deg, #4d3f2c, #33291d 55%, #241c13);
+  box-shadow:
+    inset 0 0 0 max(1px, calc(var(--px) * .008)) #120c05,
+    inset 0 0 0 calc(var(--px) * .026) #c9a75c,
+    inset 0 0 0 calc(var(--px) * .032) #5a420e,
+    inset 0 calc(var(--px) * .045) calc(var(--px) * .05) rgba(255, 240, 200, .1),
+    inset 0 calc(var(--px) * -.03) calc(var(--px) * .05) rgba(0, 0, 0, .45),
+    0 calc(var(--px) * .022) 0 #1b130a,
+    0 calc(var(--px) * .06) calc(var(--px) * .08) rgba(0, 0, 0, .6);
+}
+.skin-intarsia .ix-medal__name { font-family: var(--font-body); font-weight: 700; line-height: 1.15; color: #f1e6c8; white-space: nowrap; letter-spacing: .01em;
+  text-shadow: 0 1px 0 #000, 0 0 calc(var(--px) * .03) rgba(0, 0, 0, .8); }
+.skin-intarsia .ix-medal__score { display: flex; align-items: flex-end; gap: calc(var(--px) * .015); line-height: 1; }
+.skin-intarsia .ix-medal__pts { height: calc(var(--px) * .24); width: auto; }
+.skin-intarsia .ix-medal__unit { font: 700 calc(var(--px) * .1)/1 var(--font-body); color: #e9cf85; text-shadow: 0 1px 0 #000; margin-bottom: calc(var(--px) * .025); }
+.skin-intarsia .ix-medal__cards { font: 600 max(11px, calc(var(--px) * .075))/1.2 var(--font-body); font-variant-numeric: lining-nums; color: #b9ad90; text-shadow: 0 1px 0 #000; }
+.skin-intarsia .ix-medal__name { font-variant-numeric: lining-nums; }
+
+/* 두 자리 보너스 수(10장 이상)는 사각 폭에 맞춰 줄인다 */
+.skin-intarsia .ix-bonus.is-2d .ix-bonus__n { font-size: calc(var(--px) * .5); letter-spacing: -.03em; }

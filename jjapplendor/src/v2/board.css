@@ -1,0 +1,426 @@
+/* 생성됨: tools/sync-v2.js 가 design/ 에서 복사한 파일 — 직접 고치지 말 것(원본을 고친 뒤 다시 복사). */
+/*
+ * 짭플렌더 v2 — 판 배치 (Zap.v2.board)
+ * 색·글꼴은 스킨이 정한 변수(--table, --panel, --panel-edge, --ink, --ink-soft, --accent, --accent-ink, --glow, --font-*)만 쓴다.
+ * 크기는 board.js 가 틀 크기에서 계산해 넣는 변수(--card-w, --noble-w, --gap, --pad, --u …)를 쓴다.
+ * 배치는 창이 아니라 담는 틀(.zb-frame)의 크기에 반응한다(컨테이너 쿼리). 기본 = 세로(폰), 가로로 넓으면 PC 배치.
+ */
+.zb-frame {
+  position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate;
+  container: zb / size;
+  background: var(--table, #2b211b); color: var(--ink, #f2eadb);
+  font-family: var(--font-body, system-ui, sans-serif); font-size: var(--u, 14px); line-height: 1.2; font-variant-numeric: lining-nums;
+  -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  --zb-edge: color-mix(in srgb, var(--panel-edge, #5b4a3a) 80%, transparent);
+  --zb-panel: color-mix(in srgb, var(--panel, #2a201a) 88%, transparent);
+  --zb-glow-soft: color-mix(in srgb, var(--glow, #f0d27a) 45%, transparent);
+}
+.zb-frame *, .zb-frame *::before, .zb-frame *::after { box-sizing: border-box; }
+.zb-frame button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: inherit; }
+.zb-frame button:disabled { cursor: default; }
+.zb-frame button:focus-visible { outline: 2px solid var(--glow, #f0d27a); outline-offset: 2px; }
+
+.zb {
+  --zb-wide: 0;
+  position: absolute; inset: 0; padding: var(--pad);
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  /* "notice" 줄은 비어 있는 자리: 내 자리 윗변에 걸치는 알림 한 줄(높이 --note-h)이 들어갈 만큼 늘 비워 둔다(위아래 줄 사이 틈까지 쓰므로
+   * 줄 자체는 그 틈만큼 덜 잡는다). 알림이 판(공급처 숫자·카드)을 가리지 않는다 */
+  grid-template-areas: "opps" "table" "notice" "tray";
+  grid-template-rows: auto auto minmax(max(0px, calc(var(--note-h, 24px) - var(--gap) * 1.4)), 1fr) auto;
+  align-content: stretch; row-gap: calc(var(--gap) * .7);
+}
+/* 관전(내 자리 없음): 판 아래 한 줄(foot)에 알림과 '최근 일' 단추 */
+.zb.is-watch { grid-template-areas: "opps" "table" "foot"; grid-template-rows: auto 1fr auto; align-content: stretch; }
+.zb.is-watch .zb-table { align-self: center; }
+/* 관전 4인(세로 배치): 상대 칸 2×2 */
+.zb.is-watch[data-n="4"] .zb-opps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* 판 묶음(귀족·덱과 카드·공급처): 세로 배치에서는 안쪽 여백을 좁혀 한 덩어리로 보이게 한다 */
+.zb-table { grid-area: table; display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.zb-table > .zb-supply { margin-top: calc(var(--gap) * .4); }
+
+/* ── 상대: 작은 격자 ── */
+.zb-opps { grid-area: opps; display: flex; gap: var(--gap); min-width: 0; min-height: 0; }
+.zb-opp {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: calc(var(--u) * .28);
+  padding: calc(var(--u) * .4) calc(var(--u) * .45) calc(var(--u) * .45);
+  background: var(--zb-panel); border: 1px solid var(--zb-edge); border-radius: calc(var(--u) * .6);
+  transition: box-shadow .3s ease, border-color .3s ease, opacity .3s ease;
+}
+.zb-frame button.zb-opp { background: var(--zb-panel); border: 1px solid var(--zb-edge); padding: calc(var(--u) * .4) calc(var(--u) * .45) calc(var(--u) * .45); }
+.zb-opp.is-current { border-color: var(--accent); box-shadow: 0 0 0 2px var(--glow), 0 0 calc(var(--u) * 1.5) calc(var(--u) * .25) var(--glow); }
+.zb-opp.is-off { opacity: .55; }
+.zb-opp.is-winner { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.zb-opp__head { display: flex; align-items: center; gap: calc(var(--u) * .3); min-width: 0; min-height: calc(var(--u) * 1.6); }
+.zb-opp__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: calc(var(--u) * 1.02); color: var(--ink); text-align: left; }
+.zb-opp.is-current .zb-opp__name::before { content: ''; display: inline-block; width: .5em; height: .5em; margin-right: .35em; vertical-align: .08em; transform: rotate(45deg); background: var(--accent); box-shadow: 0 0 0 1px var(--accent-ink), 0 0 .5em var(--glow); }
+.zb-opp__off { flex: none; width: calc(var(--u) * .95); height: calc(var(--u) * .95); border-radius: 50%; border: 2px solid var(--ink-soft); background: transparent; box-shadow: inset 0 0 0 2px var(--panel); opacity: .9; }
+.zb-opp.is-off .zb-opp__name { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--ink-soft) 70%, transparent); }
+/* 방장: 이름 옆의 작은 관 */
+.zb-leader { flex: none; display: inline-block; width: calc(var(--u) * 1.05); height: calc(var(--u) * .8); background: var(--accent);
+  clip-path: polygon(0 100%, 0 22%, 25% 55%, 50% 0, 75% 55%, 100% 22%, 100% 100%); filter: drop-shadow(0 1px 0 rgba(0,0,0,.5)); }
+.zb-tray__id .zb-leader { width: calc(var(--u) * 1.3); height: calc(var(--u) * 1); }
+.zb-pzoom__off { color: var(--ink-soft); font-size: calc(var(--u) * .95); font-weight: 700; }
+.zb-opp__score { flex: none; display: grid; place-items: center; line-height: 1; }
+.zb-opp__grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: start; justify-items: center; max-width: calc(var(--u) * 15); width: 100%; }
+.zb-cell { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * .22); min-width: 0; }
+.zb-cell__bon, .zb-cell__tok, .zb-cell__none { display: grid; place-items: center; }
+.zb-cell__none { visibility: hidden; }
+.zb-opp__extra { display: flex; align-items: flex-end; justify-content: space-between; gap: calc(var(--u) * .3); min-height: calc(var(--opp-mini-w) * 1.4); }
+.zb-opp__extra.is-none { min-height: 0; }
+/* 세로 배치에서 상대가 한 명(2인)이면 칸 하나를 옆으로 펼친다: 격자와 예약·귀족을 한 줄에 */
+.zb-opps[data-count="1"] .zb-opp { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); grid-template-areas: "head head" "grid extra"; column-gap: calc(var(--u) * 1); align-items: end; }
+.zb-opps[data-count="1"] .zb-opp__head { grid-area: head; }
+.zb-opps[data-count="1"] .zb-opp__grid { grid-area: grid; width: calc(var(--u) * 15); }
+.zb-opps[data-count="1"] .zb-opp__extra { grid-area: extra; justify-content: flex-end; gap: calc(var(--u) * .8); }
+.zb-opp__res, .zb-opp__nob { display: flex; gap: calc(var(--u) * .22); align-items: flex-end; }
+.is-zero { transform: scale(.8); }
+
+.zb-goldchip { position: relative; display: grid; place-items: center; width: var(--px); height: var(--px); }
+.zb-goldchip > :first-child { grid-area: 1 / 1; }
+.zb-goldchip__n { grid-area: 1 / 1; z-index: 1; font: 700 calc(var(--px) * .66)/1 var(--font-number, serif); color: #2a1c06; text-shadow: 0 0 2px #ffe9a6, 0 0 3px #ffe9a6, 0 1px 0 rgba(255,240,190,.9); }
+
+.zb-mini { position: relative; display: inline-block; flex: none; }
+.zb-mini__s { position: absolute; left: 0; top: 0; display: block; transform-origin: 0 0; }
+
+/* ── 귀족 ── */
+.zb-nobles { grid-area: nobles; display: flex; justify-content: center; align-items: center; gap: var(--gap); min-height: calc(var(--noble-w) * 1.15); }
+.zb-noblebtn { display: block; width: var(--noble-w); height: calc(var(--noble-w) * 1.15); flex: none; position: relative; }
+
+/* ── 덱과 공개 카드 ── */
+.zb-market { grid-area: market; display: flex; flex-direction: column; gap: var(--gap); align-items: center; justify-content: center; min-width: 0; }
+.zb-tier { display: flex; gap: var(--gap); }
+.zb-card, .zb-deckbtn, .zb-slot { display: block; position: relative; flex: none; width: var(--card-w); height: calc(var(--card-w) * 1.4); }
+.zb-card > *, .zb-deckbtn > *, .zb-slot > * { position: relative; }
+.zb-card.is-buyable::after {
+  content: ''; position: absolute; pointer-events: none; z-index: 2;
+  inset: calc(var(--card-w) * -.03); border-radius: calc(var(--card-w) * .095);
+  border: max(2px, calc(var(--card-w) * .022)) solid var(--glow);
+  box-shadow: 0 0 calc(var(--card-w) * .1) var(--zb-glow-soft), inset 0 0 calc(var(--card-w) * .06) var(--zb-glow-soft);
+}
+.zb-card.is-buyable::before {
+  content: ''; position: absolute; pointer-events: none; z-index: 3;
+  left: 50%; bottom: calc(var(--card-w) * -.075); width: calc(var(--card-w) * .11); height: calc(var(--card-w) * .11);
+  transform: translateX(-50%) rotate(45deg); background: var(--glow); border: 1px solid rgba(0,0,0,.6);
+  box-shadow: 0 0 calc(var(--card-w) * .06) var(--glow);
+}
+.zb-card--res { width: var(--mini-w); height: calc(var(--mini-w) * 1.4); --card-w: var(--mini-w); }
+.zb-card--res.is-secret > .zb-mini::after {
+  content: ''; position: absolute; left: 50%; top: calc(var(--mini-w) * -.09); width: calc(var(--mini-w) * .34); height: calc(var(--mini-w) * .2); transform: translateX(-50%);
+  border-radius: 0 0 50% 50% / 0 0 100% 100%; border: max(1.5px, calc(var(--mini-w) * .035)) solid var(--ink); border-top: 0; background: var(--panel); opacity: .9;
+}
+.zb-resghost { display: inline-block; flex: none; border: 1px dashed var(--zb-edge); border-radius: calc(var(--mini-w) * .08); background: rgba(0,0,0,.14); }
+
+/* ── 공급처: 칩 더미 ── */
+.zb-supply { grid-area: supply; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: end; justify-items: center; }
+.zb-stack { position: relative; display: grid; place-items: end center; min-height: var(--sup-h, 0); transition: transform .16s ease; }
+.zb-stack.is-inert, .zb-frame button.zb-stack:disabled { cursor: default; }
+.zb-frame button.zb-stack:disabled { opacity: 1; }
+.zb.is-picking .zb-stack:not(.is-inert):not(.is-empty):hover { transform: translateY(-4%); }
+.zb-stack.is-picked { transform: translateY(-9%); }
+.zb-stack__sel { position: absolute; right: -18%; top: -6%; display: flex; flex-direction: column; gap: 2px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); animation: zb-pop .18s ease-out; }
+.zb-stack.is-picked::after { content: ''; position: absolute; left: 12%; right: 12%; bottom: -5%; height: 3px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 8px var(--glow); }
+@keyframes zb-pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ── 내 자리 ── */
+.zb-tray {
+  grid-area: tray; position: relative; min-width: 0;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "id nob act" "hold hold res";
+  align-items: center; column-gap: calc(var(--gap) * 1.2); row-gap: calc(var(--u) * .35);
+  padding: calc(var(--u) * .5) var(--pad) calc(var(--u) * .55);
+  margin: 0 calc(var(--pad) * -1) calc(var(--pad) * -1);
+  background: var(--zb-panel); border-top: 1px solid var(--zb-edge);
+  box-shadow: 0 -6px 18px rgba(0,0,0,.28);
+  transition: box-shadow .35s ease, border-color .35s ease;
+}
+/* 내 차례: 윗변에 굵은 빛줄(3px)과 위쪽 빛 번짐, 자리 바탕이 살짝 밝아지고 점수 옆에 상대 칸과 같은 차례 표시(◆). 배치는 바뀌지 않는다(그림자·배경만) */
+.zb-tray.is-current {
+  border-top-color: var(--glow);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 22%, var(--zb-panel)), color-mix(in srgb, var(--accent) 7%, var(--zb-panel)) 70%);
+  box-shadow: inset 0 4px 0 var(--accent), inset 0 5px 0 color-mix(in srgb, var(--accent-ink) 35%, transparent), 0 -1px 0 var(--glow), 0 calc(var(--u) * -.6) calc(var(--u) * 1.8) var(--zb-glow-soft);
+}
+.zb-tray__score { position: relative; }
+.zb-tray.is-current .zb-tray__score::before {
+  content: ''; position: absolute; z-index: 2; left: calc(var(--u) * -.2); top: calc(var(--u) * -.25); width: calc(var(--u) * 1.05); height: calc(var(--u) * 1.05);
+  transform: rotate(45deg); background: var(--accent); box-shadow: 0 0 0 2px var(--accent-ink), 0 0 calc(var(--u) * .8) var(--glow);
+}
+.zb-tray__id { grid-area: id; display: flex; align-items: center; gap: calc(var(--u) * .7); min-width: 0; }
+.zb-tray__score { display: grid; place-items: center; line-height: 1; }
+.zb-tray__total { font-family: var(--font-number, serif); font-size: calc(var(--u) * 1.15); color: var(--ink-soft); white-space: nowrap; font-variant-numeric: lining-nums; }
+.zb-tray__total b { font-size: 1.3em; color: var(--ink); font-weight: 700; }
+.zb-tray__total.is-over { padding: .05em .45em; border-radius: .4em; color: var(--accent-ink); background: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, #000); }
+.zb-tray__total.is-over b { color: var(--accent-ink); }
+.zb-tray__nob { grid-area: nob; display: flex; gap: calc(var(--u) * .3); align-items: center; }
+.zb-tray__nob.is-none { visibility: hidden; }
+.zb-tray__id .zb-tray__nob { margin-left: calc(var(--u) * .2); }
+.zb-hold { grid-area: hold; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); justify-items: center; align-items: end; min-width: 0; }
+.zb-hold__col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: calc(var(--u) * .3); min-width: 0; }
+.zb-hold__bon, .zb-hold__tok { display: grid; place-items: end center; }
+.zb-hold__tok { min-height: var(--tok-h, 0); }
+.zb-hold__bon.is-none { visibility: hidden; }
+.zb-hold__tokbtn { position: relative; border-radius: 30%; }
+/* 반납: 칩 단추가 칸 폭을 다 쓰고, 좁으면 40px 까지 양옆으로 넓힌다(누르기 쉬움) */
+.zb-hold.is-returning .zb-hold__col { justify-self: stretch; }
+.zb-hold.is-returning .zb-hold__tokbtn { align-self: stretch; min-width: 40px; margin-inline: min(0px, calc((100% - 40px) / 2)); min-height: 40px; }
+.zb-hold.is-returning .zb-hold__tokbtn:not(:disabled) { animation: zb-nudge .8s ease-in-out 2; }
+.zb-hold.is-returning .zb-hold__tokbtn:not(:disabled)::after { content: ''; position: absolute; left: 10%; right: 10%; bottom: -4px; height: 3px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 6px var(--glow); }
+@keyframes zb-nudge { 0%, 100% { transform: none; } 50% { transform: translateY(-5%); } }
+.zb-tray__res { grid-area: res; display: flex; gap: calc(var(--gap) * .8); align-items: flex-end; }
+.zb-tray__act { grid-area: act; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: calc(var(--u) * .3); min-height: max(40px, calc(var(--u) * 2.5)); }
+.zb-tray__btns { display: flex; gap: calc(var(--u) * .4); align-items: center; justify-content: flex-end; }
+/* 알림 칸: 세로 배치에서는 내 자리 윗변 위(비워 둔 줄)에 탭처럼 걸친다 */
+.zb-tray__note { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); z-index: 6; display: flex; justify-content: center; max-width: 96%; pointer-events: none; }
+.zb-tray__note:empty { display: none; }
+
+/* ── 최근 일 ── */
+.zb-frame button.zb-logbtn {
+  position: relative; flex: none; display: grid; place-items: center;
+  width: max(40px, calc(var(--u) * 2.5)); height: max(40px, calc(var(--u) * 2.5)); border-radius: 50%;
+  background: color-mix(in srgb, var(--panel) 70%, var(--ink) 9%); border: 1px solid var(--zb-edge); color: var(--ink-soft);
+  box-shadow: 0 2px 0 rgba(0,0,0,.3);
+}
+.zb-logbtn__icon { width: 46%; height: 38%; background: linear-gradient(currentColor, currentColor) 0 0 / 100% 2px no-repeat, linear-gradient(currentColor, currentColor) 0 50% / 75% 2px no-repeat, linear-gradient(currentColor, currentColor) 0 100% / 88% 2px no-repeat; }
+.zb-logbtn__n { position: absolute; right: -.35em; top: -.35em; min-width: 1.5em; height: 1.5em; padding: 0 .3em; border-radius: .75em; display: grid; place-items: center;
+  font: 700 calc(var(--u) * .78)/1 var(--font-body); color: var(--accent-ink); background: var(--accent); box-shadow: 0 0 0 1.5px var(--panel); }
+.zb-frame button.zb-logbtn--foot { grid-area: foot; justify-self: end; align-self: center; }
+.zb-zoom.zb-zoom--log { align-items: stretch; gap: 0; width: min(calc(var(--u) * 26), 100%); padding: calc(var(--u) * .6) calc(var(--u) * .8) calc(var(--u) * .8);
+  background: var(--panel); border: 1px solid var(--zb-edge); border-radius: calc(var(--u) * .8); box-shadow: 0 16px 40px rgba(0,0,0,.6); }
+.zb-frame button.zb-log__head { text-align: left; font-weight: 700; color: var(--ink-soft); font-size: calc(var(--u) * .95); padding-bottom: calc(var(--u) * .4); border-bottom: 1px solid color-mix(in srgb, var(--zb-edge) 60%, transparent); cursor: zoom-out; }
+.zb-log { display: flex; flex-direction: column; }
+.zb-log__line { display: flex; flex-wrap: wrap; align-items: center; column-gap: .2em; row-gap: .2em; padding: calc(var(--u) * .45) 0; font-size: calc(var(--u) * 1); color: var(--ink); line-height: 1.35;
+  border-bottom: 1px solid color-mix(in srgb, var(--zb-edge) 35%, transparent); }
+.zb-log__line:last-child { border-bottom: 0; }
+.zb-log__line:first-child { font-weight: 600; }
+.zb-log__who { font-weight: 700; color: var(--ink); }
+.zb-log__who.is-me { color: var(--accent); }
+.zb-log__chips { display: inline-flex; align-items: center; gap: .18em; }
+.zb-log__card { display: inline-flex; align-items: center; gap: .2em; font-weight: 700; }
+.zb-log__soft { color: var(--ink-soft); }
+.zb-result__wait { text-align: center; color: var(--ink-soft); font-size: calc(var(--u) * 1.05); }
+
+/* ── 단추 ── */
+.zb-frame .zb-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .3em; white-space: nowrap;
+  min-height: max(40px, calc(var(--u) * 2.5)); padding: 0 calc(var(--u) * .95); border-radius: calc(var(--u) * .5);
+  font-weight: 700; font-size: calc(var(--u) * 1.02); letter-spacing: -.01em;
+  color: var(--ink); background: color-mix(in srgb, var(--panel) 70%, var(--ink) 9%); border: 1px solid var(--zb-edge);
+  box-shadow: 0 2px 0 rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);
+  transition: transform .12s ease, box-shadow .2s ease, opacity .2s ease;
+}
+.zb-frame .zb-btn:active:not(:disabled) { transform: translateY(1px); }
+.zb-frame .zb-btn:disabled { opacity: .5; box-shadow: none; }
+.zb-frame .zb-btn--go { color: var(--accent-ink); background: var(--accent); border-color: color-mix(in srgb, var(--accent) 60%, #000); }
+.zb-frame .zb-btn--go:disabled { color: var(--ink-soft); background: color-mix(in srgb, var(--panel) 70%, var(--ink) 9%); border-color: var(--zb-edge); opacity: .6; }
+.zb-frame .zb-btn--quiet { background: transparent; box-shadow: none; color: var(--ink-soft); }
+.zb-frame .zb-btn--end.is-idle { visibility: hidden; }
+.zb-frame .zb-btn--end.is-ready, .zb-frame .zb-btn--go.is-ready:not(:disabled) {
+  color: var(--accent-ink); background: var(--accent); border-color: var(--glow);
+  box-shadow: 0 0 0 1px var(--glow), 0 0 calc(var(--u) * 1.1) var(--glow), 0 2px 0 rgba(0,0,0,.35);
+  animation: zb-ready 1.8s ease-in-out infinite;
+}
+/* 막 나타난 [차례 넘기기]: 잠깐(두 번 누르기 막기) 누를 수 없지만 모습은 준비된 그대로 */
+.zb-frame .zb-btn.is-arming { opacity: 1; pointer-events: none; }
+@keyframes zb-ready { 0%, 100% { box-shadow: 0 0 0 1px var(--glow), 0 0 calc(var(--u) * .7) var(--zb-glow-soft), 0 2px 0 rgba(0,0,0,.35); } 50% { box-shadow: 0 0 0 1px var(--glow), 0 0 calc(var(--u) * 1.5) var(--glow), 0 2px 0 rgba(0,0,0,.35); } }
+.zb-btn__gem { display: inline-flex; align-items: center; gap: .1em; }
+
+/* ── 꼭 필요할 때만: 내 자리 위 가장자리의 짧은 한 줄 ── */
+/* 자리는 늘 비워 둔 곳(세로: 내 자리 윗변 위의 빈 줄, 가로: 내 자리 안 누를 것 위, 관전: 판 아래 줄)이라 카드·숫자를 가리지 않는다 */
+.zb-notice {
+  z-index: 6; pointer-events: none; min-width: 0; max-width: 100%;
+  padding: calc(var(--u) * .28) calc(var(--u) * .9); border-radius: calc(var(--u) * .5);
+  font-weight: 700; font-size: max(12px, calc(var(--u) * .98)); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--accent-ink); background: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 55%, #000);
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  animation: zb-rise .22s ease-out;
+}
+.zb-tray__note .zb-notice { padding: calc(var(--u) * .22) calc(var(--u) * .8); line-height: 1.2; border-radius: calc(var(--u) * .5) calc(var(--u) * .5) 0 0; border-bottom: 0; box-shadow: 0 -3px 10px rgba(0,0,0,.35); }
+.zb-notice--toast { color: var(--ink); background: var(--panel); border-color: var(--zb-edge); }
+.zb-notice--watch { grid-area: foot; justify-self: center; align-self: center; max-width: calc(100% - 2 * (max(40px, var(--u) * 2.5) + var(--gap))); animation: none; }
+@keyframes zb-rise { from { opacity: 0; } }
+.zb-notice.is-shown { animation: none; }
+
+/* ── 덮개(제자리 확대·결과) ── */
+.zb-veil { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; padding: var(--pad); background: rgba(8,6,4,.62); animation: zb-fade .16s ease-out; }
+@keyframes zb-fade { from { opacity: 0; } }
+.zb-sheet {
+  width: 100%; max-height: 100%; overflow: auto; padding: calc(var(--u) * 1.1);
+  background: var(--panel); border: 1px solid var(--zb-edge); border-radius: calc(var(--u) * .9);
+  box-shadow: 0 18px 50px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06);
+  animation: zb-sheet .2s cubic-bezier(.2,.9,.3,1.1);
+}
+@keyframes zb-sheet { from { transform: translateY(14px) scale(.97); opacity: 0; } }
+.zb-sheet__actions { display: flex; gap: calc(var(--u) * .5); justify-content: center; flex-wrap: wrap; }
+.zb-sheet__actions .zb-btn { min-width: calc(var(--u) * 6); min-height: max(44px, calc(var(--u) * 3.1)); font-size: calc(var(--u) * 1.15); }
+
+/* ── 제자리 확대: 원래 자리를 중심으로 커지고, 누를 것은 바로 아래에 붙는다 (자리는 board.js 가 잡는다) ── */
+.zb-veil--zoom { display: block; padding: 0; background: rgba(8,6,4,.36); outline: none; }
+.zb-zoom { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * .5); overflow: auto; overscroll-behavior: contain; }
+.zb-frame button.zb-zoom__focus { display: block; flex: none; position: relative; width: var(--card-w); height: calc(var(--card-w) * 1.4); filter: drop-shadow(0 calc(var(--u) * 1) calc(var(--u) * 1.4) rgba(0,0,0,.6)); cursor: zoom-out; }
+.zb-frame button.zb-zoom__focus--noble { width: var(--noble-w); height: calc(var(--noble-w) * 1.15); }
+.zb-zoom__under {
+  display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * .6); min-width: 100%;
+  padding: calc(var(--u) * .7) calc(var(--u) * .8);
+  background: var(--panel); border: 1px solid var(--zb-edge); border-radius: calc(var(--u) * .7);
+  box-shadow: 0 10px 26px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.zb-zoom__line { color: var(--ink-soft); font-size: calc(var(--u) * 1.05); text-align: center; white-space: nowrap; }
+.zb-zoom__lack { display: flex; align-items: center; justify-content: center; gap: calc(var(--u) * .35); color: var(--ink-soft); white-space: nowrap; }
+.zb-zoom__lackword { font-weight: 700; margin-left: .3em; font-size: calc(var(--u) * 1.05); }
+.zb-zoom__lackword b { font-family: var(--font-number, serif); font-size: 1.3em; margin-right: .05em; }
+.zb-zoom__actions { display: flex; gap: calc(var(--u) * .5); justify-content: center; align-self: stretch; }
+.zb-zoom__actions .zb-btn { flex: 1 1 0; min-height: max(44px, calc(var(--u) * 3.1)); font-size: calc(var(--u) * 1.15); padding: 0 calc(var(--u) * .8); }
+
+.zb-pay { display: flex; justify-content: center; align-items: flex-end; gap: calc(var(--u) * .9); }
+.zb-pay__col { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * .35); }
+.zb-pay__piles { display: flex; align-items: flex-end; gap: calc(var(--u) * .25); }
+.zb-pay__pile { display: grid; place-items: end center; }
+.zb-pay__adj { display: flex; gap: calc(var(--u) * .25); }
+.zb-frame button.zb-pay__btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .1em; min-width: max(40px, calc(var(--u) * 2.7)); height: max(40px, calc(var(--u) * 2.5)); padding: 0 .35em;
+  border-radius: calc(var(--u) * .45); border: 1px solid var(--zb-edge); background: color-mix(in srgb, var(--panel) 70%, var(--ink) 9%);
+  color: var(--ink); font-weight: 700; font-size: calc(var(--u) * 1.15); line-height: 1;
+}
+.zb-frame button.zb-pay__btn:disabled { opacity: .3; }
+
+.zb-zoom--player {
+  align-items: stretch; gap: calc(var(--u) * .8); padding: calc(var(--u) * .8) calc(var(--u) * .9) calc(var(--u) * .9);
+  background: var(--panel); border: 1px solid var(--accent); border-radius: calc(var(--u) * .8);
+  box-shadow: 0 16px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.zb-frame button.zb-pzoom__head { display: flex; align-items: center; gap: calc(var(--u) * .8); cursor: zoom-out; }
+.zb-pzoom__name { flex: 1; font-weight: 700; font-size: calc(var(--u) * 1.4); text-align: left; }
+.zb-pzoom__total { font-family: var(--font-number, serif); color: var(--ink-soft); font-size: calc(var(--u) * 1.2); }
+.zb-pzoom__total b { color: var(--ink); font-size: 1.25em; }
+.zb-pzoom__hold { grid-area: auto; column-gap: calc(var(--u) * .5); }
+.zb-pzoom__cards { display: flex; flex-wrap: wrap; gap: var(--gap); align-items: flex-end; justify-content: flex-start; }
+.zb-pzoom__card, .zb-frame button.zb-pzoom__card { width: var(--card-w); height: calc(var(--card-w) * 1.4); display: block; position: relative; flex: none; }
+.zb-pzoom__noble { display: block; width: var(--noble-w); height: calc(var(--noble-w) * 1.15); flex: none; }
+
+/* ── 결과 ── */
+/* 결과: 낮은 화면에서도 단추까지 닿도록 덮개 안에서 위아래로 굴러간다(가운데 맞춤은 margin:auto — 넘치면 위가 잘리지 않음) */
+.zb-veil--result { display: flex; flex-direction: column; background: rgba(8,6,4,.8); padding: var(--pad); overflow: hidden auto; overscroll-behavior: contain; }
+.zb-result { margin: auto; flex: none; width: min(100%, calc(var(--u) * 34)); display: flex; flex-direction: column; align-items: stretch; gap: calc(var(--u) * 1.1); }
+/* 메달 줄: 메달은 스킨이 그리고(크기 --medal-px), 셸은 자리와 내려앉는 움직임만 맡는다 */
+.zb-result__medals { position: relative; display: flex; justify-content: center; align-items: flex-end; gap: calc(var(--medal-px) * .22); flex: none; }
+.zb-result__medal { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; flex: 0 1 auto; min-width: 0; filter: drop-shadow(0 calc(var(--medal-px) * .08) calc(var(--medal-px) * .1) rgba(0,0,0,.55)); }
+.zb-result__halo { position: absolute; left: 50%; top: 45%; width: min(calc(var(--medal-px) * 3.2), 100%); height: calc(var(--medal-px) * 2.4); translate: -50% -50%; pointer-events: none; z-index: 0;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--glow) 38%, transparent), color-mix(in srgb, var(--glow) 10%, transparent) 50%, transparent 72%); opacity: .3; }
+.zb-result__board { display: flex; flex-direction: column; gap: calc(var(--u) * .8); padding: calc(var(--u) * .9); background: var(--panel); border: 1px solid var(--zb-edge); border-radius: calc(var(--u) * .9); box-shadow: 0 18px 50px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06); }
+.zb-result__why { text-align: center; font-weight: 700; color: var(--ink); font-size: max(12px, calc(var(--u) * 1.02)); padding-bottom: calc(var(--u) * .2); }
+.zb-medal-plain { display: grid; place-items: center; width: var(--px); height: var(--px); border-radius: 50%; background: var(--accent); color: var(--accent-ink); font: 700 calc(var(--px) * .4)/1 var(--font-number, serif); }
+.zb-medal-fallback { display: contents; }
+.zb-result__rows { display: flex; flex-direction: column; gap: calc(var(--u) * .4); }
+.zb-result .zb-sheet__actions .zb-btn { min-width: calc(var(--u) * 6); min-height: max(44px, calc(var(--u) * 3)); font-size: calc(var(--u) * 1.1); }
+.zb-result__row { display: grid; grid-template-columns: calc(var(--u) * 1.6) minmax(0, 1fr) auto auto calc(var(--u) * 4); align-items: center; gap: calc(var(--u) * .7); padding: calc(var(--u) * .45) calc(var(--u) * .8); border-radius: calc(var(--u) * .5); background: rgba(0,0,0,.18); border: 1px solid transparent; }
+.zb-result__row.is-winner { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.zb-result__row.is-me .zb-result__name::after { content: ''; display: inline-block; width: .45em; height: .45em; margin-left: .45em; vertical-align: .12em; transform: rotate(45deg); background: var(--glow); }
+.zb-result__rank { font: 700 calc(var(--u) * 1.3)/1 var(--font-number, serif); color: var(--ink-soft); text-align: center; }
+.zb-result__name { font-weight: 700; font-size: calc(var(--u) * 1.25); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zb-result__meta { display: inline-flex; align-items: center; gap: .35em; font: 700 calc(var(--u) * 1.1)/1 var(--font-number, serif); color: var(--ink-soft); }
+.zb-result__meta.is-zero { opacity: .35; transform: none; }
+.zb-result__cardicon, .zb-result__nobleicon { display: inline-block; width: .8em; height: 1.05em; border: 1.5px solid currentColor; border-radius: .14em; }
+.zb-result__nobleicon { height: 1.1em; border-radius: .1em .1em 0 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%); background: currentColor; }
+.zb-result__pts { display: grid; place-items: center end; }
+
+/* ── 움직임이 그리는 층 ── */
+.zb-fx { position: absolute; inset: 0; z-index: 20; pointer-events: none; overflow: hidden; }
+.zb-fly { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform, opacity; }
+.zb-fly__chip { position: relative; overflow: visible; }
+.zb-fly__chip > * { position: absolute; left: 0; bottom: 0; }
+.zb-halo { border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--glow) 62%, transparent) 0%, color-mix(in srgb, var(--glow) 22%, transparent) 42%, transparent 70%); }
+.zb-dim { inset: 0; width: auto; height: auto; background: rgba(6,4,2,.5); }
+
+/* 손을 올린 카드가 살짝 기운다(움직임 담당이 --rx, --ry 를 넣음) */
+.zb-tier .zb-card, .zb-tier .zb-deckbtn { transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform .2s ease-out; }
+.zb-tier .zb-card:hover { z-index: 4; }
+
+/* 차례 시작: 내 자리가 한 번 빛난다 */
+.zb-tray::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(100deg, transparent 0%, transparent 35%, color-mix(in srgb, var(--glow) 60%, transparent) 50%, transparent 65%, transparent 100%); background-size: 260% 100%; background-position: 130% 0; }
+.zb-tray.is-turnstart { animation: zb-turnglow 1.4s ease-out 1; }
+.zb-tray.is-turnstart::before { animation: zb-turnsweep 1.1s ease-out 1; }
+@keyframes zb-turnglow { 0% { box-shadow: inset 0 4px 0 var(--accent), 0 -1px 0 var(--glow), 0 0 0 0 var(--glow); } 25% { box-shadow: inset 0 4px 0 var(--accent), 0 -2px 0 var(--glow), 0 calc(var(--u) * -1.2) calc(var(--u) * 3.6) var(--glow); } 100% { box-shadow: inset 0 4px 0 var(--accent), 0 -1px 0 var(--glow), 0 calc(var(--u) * -.6) calc(var(--u) * 1.8) var(--zb-glow-soft); } }
+@keyframes zb-turnsweep { 0% { opacity: .9; background-position: 130% 0; } 100% { opacity: 0; background-position: -40% 0; } }
+
+/* ════════ 가로로 넓은 틀 (PC) ════════ */
+@container zb (min-aspect-ratio: 11/10) and (min-width: 640px) {
+  .zb {
+    --zb-wide: 1;
+    grid-template-columns: var(--opp-w) auto auto auto;
+    grid-template-areas: "opps market supply nobles" "tray tray tray tray";
+    grid-template-rows: minmax(0, 1fr) auto;
+    justify-content: center; align-content: stretch;
+    column-gap: calc(var(--gap) * 2.2); row-gap: calc(var(--gap) * 1.1);
+  }
+  .zb.is-watch { grid-template-areas: "opps market supply nobles" "foot foot foot foot"; grid-template-rows: minmax(0, 1fr) auto; }
+  .zb.is-watch[data-n="4"] .zb-opps { display: flex; }
+  .zb-opps[data-count="1"] .zb-opp { display: flex; }
+  .zb-opps[data-count="1"] .zb-opp__grid { width: 100%; }
+  .zb-opps[data-count="1"] .zb-opp__extra { justify-content: space-between; gap: calc(var(--u) * .3); }
+  /* 가로 배치: 알림 한 줄은 내 자리 안, 누를 것 바로 위(그 칸 폭과 높이를 늘 비워 둔다) */
+  .zb-tray__note { position: static; transform: none; max-width: 100%; min-height: var(--note-h); align-items: flex-end; justify-content: flex-end; }
+  .zb-tray__note:empty { display: flex; }
+  .zb-tray__note .zb-notice { padding: calc(var(--u) * .28) calc(var(--u) * .9); line-height: 1.25; border-radius: calc(var(--u) * .5); border-bottom: 1px solid color-mix(in srgb, var(--accent) 55%, #000); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  .zb-tray__note .zb-notice--toast { border-bottom-color: var(--zb-edge); }
+  .zb-opps { flex-direction: column; justify-content: flex-start; gap: calc(var(--gap) * .9); }
+  .zb-opp, .zb-frame button.zb-opp { flex: 0 1 auto; padding: calc(var(--u) * .6) calc(var(--u) * .7) calc(var(--u) * .7); gap: calc(var(--u) * .45); border-radius: calc(var(--u) * .7); }
+  .zb-opp__name { font-size: calc(var(--u) * 1.15); }
+  .zb-opp__grid { max-width: none; }
+  .zb-cell { gap: calc(var(--u) * .3); }
+  .zb-opp__extra { min-height: 0; }
+  .zb-nobles { flex-direction: column; justify-content: center; gap: calc(var(--gap) * .8); }
+  .zb-tier > .zb-deckbtn { margin-right: calc(var(--gap) * .6); }
+  .zb-supply { display: flex; flex-direction: column; justify-content: space-around; align-items: center; }
+
+  .zb-tray {
+    display: flex; align-items: center; gap: calc(var(--gap) * 2.2);
+    padding: calc(var(--u) * .6) calc(var(--pad) * 1.5) calc(var(--u) * .7);
+  }
+  .zb-tray__id { flex-direction: column; gap: calc(var(--u) * .1); min-width: calc(var(--u) * 5); }
+  .zb-tray__total { font-size: calc(var(--u) * 1.2); }
+  .zb-hold { grid-template-columns: repeat(6, auto); column-gap: calc(var(--u) * .9); }
+  .zb-hold__col { gap: calc(var(--u) * .4); }
+  .zb-tray__res { gap: var(--gap); padding-left: calc(var(--gap) * 2); border-left: 1px solid color-mix(in srgb, var(--zb-edge) 60%, transparent); }
+  .zb-tray__nob { padding-left: calc(var(--gap) * 1.5); }
+  .zb-tray__act { margin-left: auto; align-self: stretch; min-width: min(calc(var(--u) * 17), 40%); }
+  .zb-tray__act .zb-btn { min-height: max(40px, calc(var(--u) * 3)); padding: 0 calc(var(--u) * 1.4); font-size: calc(var(--u) * 1.15); }
+
+
+  .zb-table { display: contents; }
+  .zb-table > .zb-supply { margin-top: 0; }
+  .zb-sheet { width: auto; max-width: 86%; padding: calc(var(--u) * 1.6); }
+  .zb-result .zb-sheet__actions { flex-direction: row; justify-content: center; }
+  .zb-zoom--player { min-width: calc(var(--opp-w) * 1.25); }
+  .zb-result { width: min(100%, calc(var(--u) * 32)); }
+}
+
+/* ════════ 폰 가로: '세로로 돌려 주세요' (판은 아래에 그대로) ════════
+ * 창이 가로로 길고 높이 500px 이하일 때만. [그래도 보기] 뒤에는 그 페이지가 떠 있는 동안 숨김(.is-rotate-ok). 색·글꼴은 스킨 변수. */
+.zb-rotate { display: none; position: absolute; inset: 0; z-index: 60; place-items: center; padding: 16px;
+  background: var(--table, #2b211b); color: var(--ink, #f2eadb); font-family: var(--font-body, system-ui, sans-serif); }
+.zb-rotate::before { content: ''; position: absolute; inset: 0; background: rgba(8, 6, 4, .45); pointer-events: none; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .zb-frame:not(.is-rotate-ok) > .zb-rotate { display: grid; }
+}
+.zb-rotate__card {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px;
+  min-width: min(300px, 100%); max-width: 100%; padding: 22px 32px 14px;
+  background: var(--panel, #2a201a); border: 1px solid var(--panel-edge, #5b4a3a); border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 0 4px color-mix(in srgb, var(--panel-edge, #5b4a3a) 35%, transparent);
+}
+.zb-rotate__icon { position: relative; width: 72px; height: 72px; color: var(--ink, #f2eadb); }
+.zb-rotate__phone { position: absolute; left: 50%; top: 50%; width: 30px; height: 50px; margin: -25px 0 0 -15px; border: 3px solid currentColor; border-radius: 7px;
+  background: color-mix(in srgb, var(--accent, #c9a75c) 18%, transparent); animation: zb-rotate-phone 2.6s cubic-bezier(.5, 0, .3, 1) infinite; }
+.zb-rotate__phone::before { content: ''; position: absolute; left: 50%; bottom: 3px; width: 8px; height: 2px; margin-left: -4px; border-radius: 1px; background: currentColor; }
+.zb-rotate__arrow { position: absolute; inset: 2px; border: 3px solid var(--accent, #c9a75c); border-color: var(--accent, #c9a75c) transparent transparent transparent; border-radius: 50%; transform: rotate(-30deg); }
+.zb-rotate__arrow::after { content: ''; position: absolute; right: 2px; top: 10px; border: 6px solid transparent; border-left-color: var(--accent, #c9a75c); border-right-width: 0; transform: rotate(40deg); }
+@keyframes zb-rotate-phone { 0%, 18% { transform: rotate(-90deg); } 55%, 100% { transform: rotate(0deg); } }
+.zb-rotate__title { margin: 0; font-weight: 700; font-size: 19px; letter-spacing: .01em; color: var(--ink, #f2eadb); text-align: center; }
+.zb-frame button.zb-rotate__skip { min-height: 40px; padding: 0 14px; font-size: 13px; color: var(--ink-soft, #b8ab94); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.zb-frame button.zb-rotate__skip:hover { color: var(--ink, #f2eadb); }
+
+/* 움직임 줄이기(시스템 설정 또는 게임 설정): 전환은 아예 끈다(transition: none). 짧은 길이(.001s)로 두면 크기 맞춤 때
+ * 수백 요소의 모든 속성이 전환을 시작해 처음 그리기가 수십 초 멈춘다(검토 S-0). 키프레임 움직임은 한 번에 끝 모습으로. */
+@media (prefers-reduced-motion: reduce) {
+  .zb-frame, .zb-frame *, .zb-frame *::before, .zb-frame *::after { animation-duration: .001s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition: none !important; }
+}
+.zb-frame.is-calm, .zb-frame.is-calm *, .zb-frame.is-calm *::before, .zb-frame.is-calm *::after { animation-duration: .001s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition: none !important; }
