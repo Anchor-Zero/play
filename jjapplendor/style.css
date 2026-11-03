@@ -88,6 +88,8 @@ small { font-size: 12.5px; font-weight: 400; }
 /* 연결 경로: 서버 패널 참가자 줄의 '직접'/'중계', 참가자 위 막대의 ' · 중계' */
 .badge--path { color: var(--p-soft); }
 .badge--relay { border-color: color-mix(in srgb, var(--gold) 70%, var(--p-edge)); color: color-mix(in srgb, var(--gold) 70%, var(--p-ink)); }
+/* 온라인 컴퓨터 자리(2026-11-03): 참가자 줄의 '컴퓨터' 표지 */
+.badge--bot { border-style: dashed; color: var(--p-ink); }
 .pill__path { flex: none; font-size: 13px; color: color-mix(in srgb, var(--gold) 70%, var(--p-ink)); }
 .topbar .pill .pill__path { font-size: 12px; } /* 좁은 폰에서 연결 표시가 점만 남아도 '중계'는 보이게 */
 .me__you { margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--p-ink); color: var(--p-bg); font-size: 12px; font-weight: 800; vertical-align: 1px; }
@@ -315,6 +317,7 @@ html[data-skin="intarsia"] .toast { background: #262419; color: #ece3cd; border-
 .plist__rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .plist__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 50px; padding: 6px 10px; border: 1px solid var(--p-line); border-radius: 10px; background: var(--p-well); }
 .plist__row.is-off { border-style: dashed; }
+.plist__row.is-bot .plist__no { background: var(--p-well); border-style: dashed; }
 .plist__no { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--p-bg); border: 1px solid var(--p-line); font-family: var(--n-font); font-weight: 700; font-size: 14px; }
 .plist__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 17px; }
 .startbox { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--p-line); border-radius: 12px; background: var(--p-well); }
@@ -338,6 +341,12 @@ html[data-skin="intarsia"] .toast { background: #262419; color: #ece3cd; border-
 .hostpanel__status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .hostpanel__state { font-weight: 700; }
 .lobby--host { max-width: 600px; }
+/* 서버 패널(대기실)의 컴퓨터 자리 칸: [스타일 ▾] [컴퓨터 추가], 좁으면 단추가 다음 줄로 */
+.botbox { display: grid; gap: 10px; padding: 14px; border: 1px dashed var(--p-edge); border-radius: 12px; background: var(--p-well); min-width: 0; }
+.botbox .hostpanel__label { font-size: 14px; color: var(--p-ink); }
+.botbox__row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.botbox__row .botbox__style { flex: 1 1 9em; width: 0; min-width: 0; max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--p-bg); }
+.botbox__row .btn { flex: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .btn:active:not(:disabled) { transform: none; }

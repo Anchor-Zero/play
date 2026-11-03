@@ -29,6 +29,8 @@
   const TAKEN_OVER = 'taken_over'; // room.js 가 자리를 넘겨준 옛 연결에 보내는 error 의 detail
   /** 서버 화면 몫의 연결 id. room 에는 자리 없는 연결(관전)로 보이며, 여기로 오는 events 를 HostHandle 의 'events' 로 내보낸다. */
   const SCREEN_CONN = '~screen';
+  /** 컴퓨터 자리의 기기 안 연결 id 머리 (2026-11-03). 'bot:' + 순번 */
+  const BOT_PREFIX = 'bot:';
 
   /** 시간 기준값(ms). 시험에서만 `Zap.net._timing` 으로 줄여 쓴다. */
   const T = {
@@ -1021,6 +1023,12 @@
     const conns = new Map();
     /** 기기 안 연결 (hostPlays 일 때) @type {{core: ReturnType<typeof createClientCore>, alive:boolean}|null} */
     let local = null;
+    /** 컴퓨터 자리의 기기 안 연결 (2026-11-03). norm: 앉힐 때의 비교용 이름, deliver: room 이 보낸 메시지 받기,
+     * shut(sync): 닫기 — leave 를 보낸 뒤 room 에서 disconnect (sync 면 우편함을 거치지 않고 지금 바로)
+     * @typedef {{id:string, norm:string, alive:boolean, api:ClientConnection, deliver:(msg:any) => void, shut:(sync:boolean) => void}} BotConn */
+    /** 연결 id → 컴퓨터 연결 @type {Map<string, BotConn>} */
+    const bots = new Map();
+    let botSeq = 0;
     /** @type {() => void} */ let unwatch = function () {};
 
     /** @param {string} ev @param {any} data */
@@ -1122,6 +1130,15 @@
       lobbyGraceMs: T.lobbyGraceMs,
       send(connId, msg) {
         if (msg.type === 'room') noteName(connId, msg.room);
+        // 컴퓨터 자리: 서버 겸 플레이어 연결과 같은 우편함으로 복사본을 전한다(닫힌 연결에는 전하지 않음).
+        // 기기 안 연결이라 아래 closing 뒤 막기는 적용하지 않는다(서버 닫기 때는 연결 자체를 닫는다).
+        if (connId.indexOf(BOT_PREFIX) === 0) {
+          const b = bots.get(connId);
+          if (!b || !b.alive) return;
+          const copy = clone(msg);
+          post(function () { if (b.alive) b.deliver(copy); });
+          return;
+        }
         // 서버가 닫힌다고 알린 뒤에는 아무것도 보내지 않는다. 닫히면서 연결 순서대로 끊김이 처리될 때
         // '앞사람 끊김' 방 정보가 남은 참가자에게 가지 않게.
         if (closingSent && connId !== 'local') return;
@@ -1143,6 +1160,7 @@
       },
       kick(connId) {
         if (connId === SCREEN_CONN) return;
+        if (connId.indexOf(BOT_PREFIX) === 0) return; // 컴퓨터 자리는 넘겨받을 수 없으므로(claim 거부) 닫을 일이 없다
         if (connId === 'local') {
           // 기기 안 연결은 닫을 통로가 없다. 자리 없는 새 연결로 다시 잇는다.
           const l = local;
@@ -1432,6 +1450,131 @@
       l.core.opened();
     }
 
+    /* ── 컴퓨터 자리의 기기 안 연결 (2026-11-03) ──
+     * createClientCore 를 쓰지 않는다. 그것은 sessionStorage/localStorage 에 자리·이름을 기억하고 방 정보를 받으면 기억으로 자리를
+     * 되찾으려 하므로, 같은 탭의 서버 겸 플레이어(local) 자리 기억을 덮어쓰거나 그 이름을 claim 할 수 있다. 여기 연결은
+     * 저장소·자동 자리 잡기·ping·경로 판정이 없고, 처음부터 'open' 이며, 메시지는 local 과 같은 우편함(post)으로 오간다.
+     * 자리는 room.joinBot 으로만 앉으므로 join·claim·admin 은 보내지 않고 거부한다. */
+
+    /** @param {string} connId @param {string} norm @returns {BotConn} */
+    function makeBotConn(connId, norm) {
+      /** @type {Record<string, Array<(data:any) => void>>} */
+      const ls = { room: [], state: [], events: [], error: [], status: [] };
+      /** @type {ConnStatus} */
+      let st = 'open';
+      /** @type {RoomInfo|null} */
+      let info = null;
+      /** @type {PlayerView|null} */
+      let view = null;
+      /** @param {string} ev @param {any} data */
+      const fire = function (ev, data) {
+        for (const fn of (ls[ev] || []).slice()) {
+          try { fn(data); } catch (e) { if (G.console) G.console.error(e); }
+        }
+      };
+      /** 지금 실행 중인 코드가 끝난 뒤 error 사건 @param {string} detail */
+      const refuse = function (detail) {
+        Promise.resolve().then(function () { fire('error', { code: 'bad_state', detail }); });
+      };
+      /** @param {any} msg */
+      const toRoom = function (msg) {
+        if (st === 'closed') { refuse('not_connected'); return; }
+        /** @type {any} */
+        let copy;
+        try { copy = clone(msg); } catch (e) {
+          Promise.resolve().then(function () { fire('error', { code: 'bad_message' }); });
+          return;
+        }
+        post(function () { room.receive(connId, copy); });
+      };
+      /** @type {BotConn} */
+      const b = {
+        id: connId,
+        norm,
+        alive: true,
+        deliver(msg) {
+          if (st === 'closed' || !isObj(msg)) return;
+          if (msg.type === 'room') {
+            if (!isObj(msg.room)) return;
+            info = msg.room;
+            if (msg.room.status === 'lobby') view = null; // 대기실에는 판이 없다
+            fire('room', info);
+          } else if (msg.type === 'state') {
+            if (!isObj(msg.view)) return;
+            view = msg.view;
+            fire('state', view);
+          } else if (msg.type === 'events') {
+            if (Array.isArray(msg.events)) fire('events', msg.events);
+          } else if (msg.type === 'error') {
+            /** @type {{code:string, detail?:string}} */
+            const err = { code: String(msg.code) };
+            if (typeof msg.detail === 'string') err.detail = msg.detail;
+            fire('error', err);
+          }
+        },
+        shut(sync) {
+          if (!b.alive) return;
+          b.alive = false;
+          bots.delete(connId);
+          if (sync) {
+            room.receive(connId, { type: 'leave' });
+            room.disconnect(connId);
+          } else {
+            // 앞서 보낸 수가 먼저 도착하도록 같은 우편함 순서로
+            post(function () { room.receive(connId, { type: 'leave' }); });
+            post(function () { room.disconnect(connId); });
+          }
+          st = 'closed';
+          fire('status', 'closed');
+        },
+        api: {
+          join() { refuse('bot'); },
+          claim() { refuse('bot'); },
+          admin() { refuse('bot'); },
+          move(move) { toRoom({ type: 'move', move }); },
+          on(ev, fn) { if (ls[ev] && typeof fn === 'function') ls[ev].push(fn); },
+          path() { return null; },
+          status() { return st; },
+          room() { return info; },
+          view() { return view; },
+          close() { b.shut(false); },
+        },
+      };
+      return b;
+    }
+
+    /** @param {string} name @param {string} style @returns {{ok:true, client:ClientConnection}|{ok:false, error:RoomError}} */
+    function addBot(name, style) {
+      if (closed) return { ok: false, error: 'bad_state' };
+      botSeq += 1;
+      const connId = BOT_PREFIX + botSeq;
+      const b = makeBotConn(connId, normName(name));
+      // room 이 joinBot 안에서 이 연결로 방 정보(you)를 보내므로 먼저 등록해 둔다.
+      bots.set(connId, b);
+      room.connect(connId);
+      const res = room.joinBot(connId, name, style);
+      if (res.ok === false) {
+        b.alive = false;
+        bots.delete(connId);
+        room.disconnect(connId);
+        return { ok: false, error: res.error };
+      }
+      return { ok: true, client: b.api };
+    }
+
+    /** @param {string} name @returns {{ok:true}|{ok:false, error:RoomError}} */
+    function removeBot(name) {
+      if (closed || room.snapshot().room.status !== 'lobby') return { ok: false, error: 'bad_state' };
+      const n = normName(name);
+      for (const b of bots.values()) {
+        if (b.norm !== n || !b.alive) continue;
+        // 우편함을 거치지 않고 바로 뺀다: 돌아온 뒤의 snapshot 에는 이미 없고, 같은 이름으로 곧바로 addBot 할 수 있다.
+        b.shut(true);
+        return { ok: true };
+      }
+      return { ok: false, error: 'no_such_seat' };
+    }
+
     sweepTimer = setInterval(sweep, T.sweepMs);
     unwatch = watchPage(wake, leave, beforeLeave);
     startPeer();
@@ -1447,6 +1590,8 @@
       },
       status() { return status; },
       paths() { return currentPaths(); },
+      addBot,
+      removeBot,
       close() {
         if (closed) return;
         // 서버 닫기: 참가자들에게 먼저 알리고(closing), 그 뒤의 방 정보 변화는 보내지 않는다.
@@ -1456,6 +1601,7 @@
         if (recoverTimer) { clearTimeout(recoverTimer); recoverTimer = null; }
         if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
         if (localClient) localClient.close();
+        for (const b of Array.from(bots.values())) b.shut(false);
         const dcs = closeAllConns();
         const p = peer;
         peer = null;

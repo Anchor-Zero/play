@@ -7,6 +7,10 @@
  * DOM·저장소를 쓰지 않으므로 Node 에서 그대로 돈다. 타이머는 대기실에서 끊긴 참가자를 얼마 뒤 목록에서 빼는 데만 쓴다.
  *
  * 들어오는 메시지는 네트워크에서 온 임의 데이터로 취급한다. 모양이 틀리면 bad_message 로 답하고 상태는 바꾸지 않는다.
+ *
+ * 컴퓨터 자리 (2026-11-03): 서버 기기가 joinBot 으로만 만든다(메시지로는 만들 수 없음). 그 자리의 연결은 사람과 똑같은 메시지를
+ * 주고받지만, 방장이 되지 않고, claim 으로 잡을 수 없고, 대기실에서 연결이 빠지면 유예 없이 목록에서 빠지며, 사람이 한 명도 없으면
+ * 판을 시작할 수 없다. 방 정보에는 컴퓨터 자리에만 bot(스타일 id) 칸이 붙는다.
  */
 (function () {
   'use strict';
@@ -16,6 +20,7 @@
   const NAME_MAX = 12;
   const KEY_MAX = 128;
   const LOBBY_GRACE_MS = 180000;
+  const BOT_STYLE_MAX = 40;
   /** 자리를 key 로 넘겨받을 때 옛 연결에 보내는 error 의 detail. net.js 가 이 값을 보고 자리 되찾기를 멈춘다. */
   const TAKEN_OVER = 'taken_over';
 
@@ -27,6 +32,7 @@
    * @property {string|null} connId  지금 이 자리에 붙어 있는 연결 (끊겼으면 null)
    * @property {number|null} seat    판이 시작되면 자리 번호
    * @property {any} graceTimer      대기실에서 끊긴 뒤 목록에서 빼기까지 기다리는 타이머 (없으면 null)
+   * @property {string|null} bot     컴퓨터 자리면 그 스타일 id, 사람 자리면 null (2026-11-03)
    */
 
   /** @param {any} v */
@@ -53,6 +59,15 @@
     // 'random' 은 선 플레이어 방식(FirstChoice)에서 '무작위'를 뜻하는 예약어라 이름으로 쓸 수 없다.
     if (name.toLowerCase() === 'random') return null;
     return name;
+  }
+
+  /** 컴퓨터 스타일 id 검사: 1~40자 문자열, 제어 문자·줄바꿈·방향 제어 문자 없음. 내용(어떤 스타일이 있는지)은 보지 않는다.
+   * @param {any} raw @returns {boolean} */
+  function validStyle(raw) {
+    if (typeof raw !== 'string') return false;
+    const len = Array.from(raw).length;
+    if (len < 1 || len > BOT_STYLE_MAX) return false;
+    return !/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/.test(raw);
   }
 
   /**
@@ -108,12 +123,17 @@
       return {
         roomCode,
         status,
-        participants: members.map((m) => ({
-          name: m.name,
-          connected: m.connId !== null,
-          seat: m.seat,
-          leader: m.norm === leaderNorm,
-        })),
+        participants: members.map((m) => {
+          /** @type {ParticipantInfo} */
+          const p = {
+            name: m.name,
+            connected: m.connId !== null,
+            seat: m.seat,
+            leader: m.norm === leaderNorm,
+          };
+          if (m.bot !== null) p.bot = m.bot; // 사람 자리에는 이 칸 자체가 없다
+          return p;
+        }),
         you: conn && conn.member ? conn.member.name : null,
         leader: leader ? leader.name : null,
         minPlayers: MIN_PLAYERS,
@@ -189,13 +209,14 @@
      * 방장 규칙을 다시 적용한다. 지금 방장이 접속 중이면 그대로 둔다(돌아온 원래 방장에게 되돌리지 않음).
      * 방장이 없거나 끊겼으면 접속 중인 사람 중 먼저 들어온 사람에게 넘긴다.
      * 접속 중인 사람이 아무도 없으면 그대로 두되, 목록에서 빠진 방장은 지운다.
+     * 컴퓨터 자리는 방장으로 고르지도 유지하지도 않는다(2026-11-03). 컴퓨터만 접속해 있으면 '접속 중인 사람이 없는' 경우와 같다.
      */
     function fixLeader() {
       const cur = leaderNorm === null ? null : findMember(leaderNorm);
-      if (cur && cur.connId !== null) return;
-      const next = members.find((m) => m.connId !== null);
+      if (cur && cur.connId !== null && cur.bot === null) return;
+      const next = members.find((m) => m.connId !== null && m.bot === null);
       if (next) leaderNorm = next.norm;
-      else if (!cur) leaderNorm = null;
+      else if (!cur || cur.bot !== null) leaderNorm = null;
     }
 
     /* ───────── 명령 (방장·서버 공통) ───────── */
@@ -257,6 +278,8 @@
       if (cmd.action === 'start') {
         if (status !== 'lobby') return { ok: false, error: 'bad_state' };
         if (members.length < MIN_PLAYERS || members.length > MAX_PLAYERS) return { ok: false, error: 'not_enough_players' };
+        // 컴퓨터끼리만 두는 판은 열지 않는다(2026-11-03): 사람 자리가 하나는 있어야 한다(끊긴 사람도 센다).
+        if (!members.some((m) => m.bot === null)) return { ok: false, error: 'not_enough_players' };
         // 자리 번호는 들어온 순서(끊긴 사람도 자리를 받고, 판은 그 사람을 기다린다).
         // 지정한 선 플레이어가 없는 이름이면 자리를 되돌리고 거부한다.
         members.forEach((m, i) => { m.seat = i; });
@@ -280,6 +303,7 @@
       // transfer
       const target = findMember(/** @type {string} */ (normOf(cmd.to)));
       if (!target) return { ok: false, error: 'no_such_seat' };
+      if (target.bot !== null) return { ok: false, error: 'bad_state' }; // 컴퓨터는 방장이 되지 않는다
       if (target.connId === null) return { ok: false, error: 'bad_state' }; // 끊긴 사람에게는 넘길 수 없다
       if (leaderNorm !== target.norm) {
         leaderNorm = target.norm;
@@ -309,7 +333,7 @@
       if (findMember(norm)) return fail(connId, 'name_taken');
       if (members.length >= MAX_PLAYERS) return fail(connId, 'room_full');
       /** @type {Member} */
-      const member = { name, norm, key: msg.key || '', connId, seat: null, graceTimer: null };
+      const member = { name, norm, key: msg.key || '', connId, seat: null, graceTimer: null, bot: null };
       members.push(member);
       conn.member = member;
       fixLeader();
@@ -324,6 +348,8 @@
       if (conn.member) return fail(connId, 'already_joined');
       const member = findMember(/** @type {string} */ (normOf(msg.name)));
       if (!member) return fail(connId, 'no_such_seat');
+      // 컴퓨터 자리는 접속 여부·key 와 상관없이 사람이 잡을 수 없다(2026-11-03). 그 자리의 key 는 늘 '' 이다.
+      if (member.bot !== null) return fail(connId, 'seat_taken');
       const key = msg.key || '';
       if (member.connId !== null) {
         // 접속 중으로 보이는 자리는 같은 key 를 가진 탭만 넘겨받는다(끊겼다 돌아왔는데 서버가 아직 모르는 경우).
@@ -414,8 +440,9 @@
       if (!member) return;
       member.connId = null;
       // 판이 시작된 뒤에는 자리를 계속 남긴다. 대기실에서는 유예 시간 동안만 남기고, 돌아오지 않으면 뺀다.
+      // 컴퓨터 자리는 돌아올 사람이 없으므로 대기실에서는 유예 없이 바로 뺀다(2026-11-03).
       if (status === 'lobby') {
-        if (graceMs > 0) startGrace(member);
+        if (graceMs > 0 && member.bot === null) startGrace(member);
         else members = members.filter((m) => m !== member);
       }
       fixLeader();
@@ -452,7 +479,35 @@
       return runCommand(cmd);
     }
 
-    return { connect, disconnect, receive, serverCommand, snapshot };
+    /**
+     * 서버 전용 (2026-11-03): 이미 connect 한 자리 없는 연결을 컴퓨터 자리로 앉힌다. 이후 그 연결은 사람과 같은 메시지를 주고받는다.
+     * 검사 순서: 모르는 연결 bad_state → 이미 자리 있음 already_joined → 대기실 아님 game_in_progress → 스타일 모양 bad_message
+     * → 이름 bad_name·name_taken → 4명 room_full. 성공하면 들어온 순서 끝에 넣고 방 정보를 보낸다(그 연결은 you 로 자기 이름을 받는다).
+     * @param {string} connId @param {string} name @param {string} style
+     * @returns {{ok:true}|{ok:false, error:RoomError}}
+     */
+    function joinBot(connId, name, style) {
+      const conn = typeof connId === 'string' ? conns.get(connId) : undefined;
+      if (!conn) return { ok: false, error: 'bad_state' };
+      if (conn.member) return { ok: false, error: 'already_joined' };
+      if (status !== 'lobby') return { ok: false, error: 'game_in_progress' };
+      if (!validStyle(style)) return { ok: false, error: 'bad_message' };
+      const clean = cleanName(name);
+      if (clean === null) return { ok: false, error: 'bad_name' };
+      const norm = clean.toLowerCase();
+      if (findMember(norm)) return { ok: false, error: 'name_taken' };
+      if (members.length >= MAX_PLAYERS) return { ok: false, error: 'room_full' };
+      /** @type {Member} */
+      const member = { name: clean, norm, key: '', connId, seat: null, graceTimer: null, bot: style };
+      members.push(member);
+      conn.member = member;
+      fixLeader();
+      broadcastRoom();
+      changed();
+      return { ok: true };
+    }
+
+    return { connect, disconnect, receive, serverCommand, snapshot, joinBot };
   }
 
   Zap.room = { createRoom };

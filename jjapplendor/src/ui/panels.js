@@ -277,26 +277,39 @@
 
   /* ───────────── 참가자 목록·시작 조작 (대기실과 서버 패널이 함께 씀) ───────────── */
 
+  /** 참가자가 컴퓨터 자리인지(방 정보의 bot 칸은 컴퓨터 자리에만 있고 그 스타일 id 다) @param {ParticipantInfo} p */
+  function isBot(p) { return !!p.bot; }
+
   /**
    * @param {RoomInfo} room
-   * @param {{canAdmin:boolean, transfer?:(name:string) => void, remove?:(name:string) => void, paths?:Record<string, ConnPath>}} o
+   * @param {{canAdmin:boolean, transfer?:(name:string) => void, remove?:(name:string) => void, removeBot?:(name:string) => void, paths?:Record<string, ConnPath>}} o
    *   remove: 대기실에서 연결이 끊긴 참가자를 목록에서 바로 빼기(방장·서버)
+   *   removeBot: (서버 화면) 대기실에서 컴퓨터 자리를 빼기
    *   paths: (서버 화면) 이름 → 그 사람 연결의 경로. 사람마다 '직접'/'중계' 표지
+   * 컴퓨터 자리 줄은 '접속 중/연결 끊김'·경로 대신 '컴퓨터' 표지만 있고 방장 넘기기가 없다. 스타일은 어디에도 쓰지 않는다
+   * (판에서 그 상대를 눌러야 보인다).
    * @returns {HTMLElement}
    */
   function participantList(room, o) {
     const rows = room.participants.map((p, i) => {
+      const bot = isBot(p);
       const order = p.seat !== null && p.seat !== undefined ? p.seat + 1 : i + 1;
-      const canMake = o.canAdmin && o.transfer && !p.leader && p.connected;
-      const canRemove = o.canAdmin && o.remove && !p.connected && room.status === 'lobby';
-      return h('li.plist__row', { test: 'participant-' + p.name, 'data-connected': String(p.connected), 'data-leader': String(p.leader), class: cls({ 'is-off': !p.connected }) },
+      const canMake = o.canAdmin && o.transfer && !p.leader && p.connected && !bot;
+      const canRemove = o.canAdmin && o.remove && !p.connected && !bot && room.status === 'lobby';
+      const canRemoveBot = bot && !!o.removeBot && room.status === 'lobby';
+      return h('li.plist__row', {
+        test: 'participant-' + p.name, 'data-connected': String(p.connected), 'data-leader': String(p.leader), 'data-bot': bot ? 'true' : null,
+        class: cls({ 'is-off': !p.connected && !bot, 'is-bot': bot }),
+      },
         h('span.plist__no', { title: '자리(차례 순서)' }, String(order)),
         h('span.plist__name', null, p.name, room.you === p.name ? h('span.me__you', null, '나') : null),
         p.leader ? h('span.badge', null, '방장') : null,
-        h('span.badge', { class: p.connected ? 'badge--on' : 'badge--off' }, p.connected ? '접속 중' : '연결 끊김'),
-        p.connected && o.paths ? pathBadge(p.name, o.paths[p.name]) : null,
+        bot ? h('span.badge.badge--bot', { test: 'bot-mark-' + p.name, title: '서버 기기에서 두는 컴퓨터 상대' }, '컴퓨터')
+          : h('span.badge', { class: p.connected ? 'badge--on' : 'badge--off' }, p.connected ? '접속 중' : '연결 끊김'),
+        !bot && p.connected && o.paths ? pathBadge(p.name, o.paths[p.name]) : null,
         canMake ? h('button.btn.btn--small', { test: 'make-leader-' + p.name, onclick: () => o.transfer(p.name) }, '방장 넘기기') : null,
-        canRemove ? h('button.btn.btn--small', { test: 'remove-' + p.name, title: '연결이 끊긴 참가자를 목록에서 뺍니다', onclick: () => o.remove(p.name) }, '빼기') : null);
+        canRemove ? h('button.btn.btn--small', { test: 'remove-' + p.name, title: '연결이 끊긴 참가자를 목록에서 뺍니다', onclick: () => o.remove(p.name) }, '빼기') : null,
+        canRemoveBot ? h('button.btn.btn--small', { test: 'remove-bot-' + p.name, title: '이 컴퓨터를 목록에서 뺍니다', onclick: () => /** @type {(name:string) => void} */ (o.removeBot)(p.name) }, '빼기') : null);
     });
     // 판이 시작된 뒤에는 새 참가를 받지 않으므로 '몇 명 중'이 아니라 '몇 명'
     const head = room.status === 'lobby' ? '참가자 ' + room.participants.length + '/' + room.maxPlayers : '참가자 ' + room.participants.length + '명';
@@ -317,7 +330,9 @@
   function startControls(room, o) {
     const n = room.participants.length;
     const enough = n >= room.minPlayers;
-    const off = room.participants.filter((p) => !p.connected).map((p) => p.name);
+    // 모두 컴퓨터면 시작할 수 없다(방도 not_enough_players 로 거부). 컴퓨터는 늘 접속해 있어 끊긴 사람 안내에 넣지 않는다
+    const noHuman = n > 0 && room.participants.every(isBot);
+    const off = room.participants.filter((p) => !p.connected && !isBot(p)).map((p) => p.name);
     const opts = [h('option', { value: 'random', selected: o.first === 'random' }, '무작위')];
     room.participants.forEach((p, i) => {
       // 값에 이름을 그대로 두면 이름이 'random' 인 사람과 헷갈리므로 'name:' 을 앞에 붙인다
@@ -330,9 +345,10 @@
           test: 'first-select',
           onchange: (/** @type {Event} */ e) => o.setFirst(/** @type {HTMLSelectElement} */ (e.target).value),
         }, opts)),
-      h('button.btn.btn--primary.btn--big', { test: o.test, disabled: !enough || !!o.blocked, onclick: o.go }, o.label),
+      h('button.btn.btn--primary.btn--big', { test: o.test, disabled: !enough || noHuman || !!o.blocked, onclick: o.go }, o.label),
       o.blocked ? h('p.note.note--warn', { test: 'start-blocked' }, o.blocked) : null,
       !enough ? h('p.note', null, room.minPlayers + '명 이상 모이면 시작할 수 있습니다.') : null,
+      noHuman ? h('p.note.note--warn', { test: 'start-need-human' }, '사람이 1명 이상 있어야 시작할 수 있습니다.') : null,
       off.length ? h('p.note.note--warn', { test: 'start-offline-note' },
         '연결이 끊긴 사람(' + off.join(', ') + ')도 자리를 받습니다. 그 사람의 차례가 되면 다시 들어올 때까지 판이 기다립니다.') : null);
   }
@@ -378,7 +394,8 @@
    */
   function nameForm(s, on) {
     const full = s.room.participants.length >= s.room.maxPlayers;
-    const off = s.room.participants.filter((p) => !p.connected);
+    // 컴퓨터 자리는 돌아갈 자리가 아니다(늘 서버에 붙어 있고 방도 claim 을 받지 않는다)
+    const off = s.room.participants.filter((p) => !p.connected && !isBot(p));
     return h('main.front.front--form', { test: 'name-form' },
       h('h1.front__h', null, '방 ', h('span.codeinline', null, s.room.roomCode), '에 참가'),
       s.connLine ? h('p.connline', { test: 'lobby-conn', 'data-status': s.conn || '' }, h('i.pill__dot'), s.connLine) : null,
@@ -410,7 +427,7 @@
    * @returns {HTMLElement}
    */
   function claimForm(s, on) {
-    const open = s.room.participants.filter((p) => !p.connected);
+    const open = s.room.participants.filter((p) => !p.connected && !isBot(p));
     return h('section.claim', { test: 'claim-form' },
       h('h2.claim__h', null, s.room.status === 'over' ? '판이 끝난 방입니다' : '판이 진행 중인 방입니다'),
       s.takenOver ? h('p.note.note--warn', { test: 'taken-over-note' },
@@ -447,15 +464,52 @@
   /* ───────────── 서버 패널 ───────────── */
 
   /**
-   * @param {{room:RoomInfo, view:PlayerView|null, joinUrl:string, status:ConnStatus, first:string, copied:boolean, hostPlays:boolean, names:string[], paths?:Record<string, ConnPath>}} s
-   * @param {{setFirst:(v:string) => void, start:() => void, transfer:(name:string) => void, remove:(name:string) => void, copy:() => void, freshCode:() => void}} on
+   * @typedef {{canUse:boolean, styles:Array<{id:string, label:string}>, style:string, error:string}} HostBotsState
+   *   canUse: 상대 모듈과 net 의 addBot 이 있는지, styles: 고를 수 있는 스타일(등록 순서), style: 지금 고른 것('random' 또는 id),
+   *   error: 더하거나 빼지 못했을 때의 짧은 알림
+   */
+
+  /**
+   * (서버 패널, 대기실) 컴퓨터 자리 칸: 스타일 고르기('무작위' 기본) + [컴퓨터 추가] + 안내 한 줄.
+   * 방이 가득 찼거나 컴퓨터 상대를 쓸 수 없으면 끈다. 더한 컴퓨터의 스타일은 여기에도 참가자 목록에도 쓰지 않는다.
+   * @param {RoomInfo} room @param {HostBotsState} b
+   * @param {{style:(v:string) => void, add:() => void}} on
+   * @returns {HTMLElement}
+   */
+  function hostBots(room, b, on) {
+    const full = room.participants.length >= room.maxPlayers;
+    const off = !b.canUse || full;
+    return h('div.botbox', { test: 'host-bots', 'data-key': 'host-bots' },
+      h('span.hostpanel__label', null, '컴퓨터 자리'),
+      h('div.botbox__row', null,
+        h('select.input.input--select.botbox__style', {
+          test: 'host-bot-style', 'aria-label': '더할 컴퓨터의 스타일', disabled: off,
+          onchange: (/** @type {Event} */ e) => on.style(/** @type {HTMLSelectElement} */ (e.target).value),
+        }, h('option', { value: 'random', selected: !b.styles.some((st) => st.id === b.style) }, '무작위'),
+          b.styles.map((st) => h('option', { value: st.id, selected: st.id === b.style }, st.label))),
+        h('button.btn', { type: 'button', test: 'host-bot-add', disabled: off, onclick: on.add }, '컴퓨터 추가')),
+      !b.canUse ? h('p.note.note--warn', { test: 'host-bot-off' }, '컴퓨터 상대를 불러오지 못해 더할 수 없습니다.')
+        : full ? h('p.note', { test: 'host-bot-full' }, '방이 가득 차서 더 앉힐 수 없습니다.') : null,
+      b.error ? h('p.note.note--warn', { test: 'host-bot-error', role: 'status' }, b.error) : null,
+      h('p.note.note--keep', { test: 'host-bot-note' },
+        '컴퓨터는 이 서버 탭에서 둡니다. 이 탭을 닫거나 새로 고치면 판과 함께 사라지고, 탭이 가려지면(폰에서 다른 앱으로 넘어가면) 컴퓨터도 멈춥니다. 스타일은 판에서 그 상대를 누르면 보입니다.'));
+  }
+
+  /**
+   * @param {{room:RoomInfo, view:PlayerView|null, joinUrl:string, status:ConnStatus, first:string, copied:boolean, hostPlays:boolean, names:string[], paths?:Record<string, ConnPath>,
+   *   bots?:HostBotsState}} s  bots: 있으면 대기실에서 컴퓨터 자리 칸을 보인다
+   * @param {{setFirst:(v:string) => void, start:() => void, transfer:(name:string) => void, remove:(name:string) => void, copy:() => void, freshCode:() => void,
+   *   botStyle?:(v:string) => void, addBot?:() => void, removeBot?:(name:string) => void}} on
    * @returns {HTMLElement}
    */
   function hostPanel(s, on) {
     const room = s.room;
     let stateBox;
+    /** @type {HTMLElement|null} */
+    let botBox = null;
     if (room.status === 'lobby') {
       stateBox = startControls(room, { first: s.first, label: '판 시작', test: 'start', setFirst: on.setFirst, go: on.start });
+      if (s.bots && on.addBot && on.botStyle) botBox = hostBots(room, s.bots, { style: on.botStyle, add: on.addBot });
     } else if (room.status === 'over') {
       stateBox = h('p.hostpanel__state', { test: 'host-game-state' }, '판이 끝났습니다. 결과 화면의 [새 판]으로 같은 자리 그대로 새 판을 엽니다.');
     } else {
@@ -473,7 +527,8 @@
         h('div.claimbox__h', null, '이 방 코드가 다른 탭이나 기기에서 이미 열려 있습니다'),
         h('p.note', null, '앞서 연 서버 탭이 아직 열려 있으면 이 탭은 참가를 받을 수 없습니다. 새 코드로 열거나, 앞의 탭을 닫으면 이 탭이 그 코드를 이어받습니다(그대로 두면 계속 기다립니다).'),
         h('div.btnrow', null, h('button.btn.btn--primary', { test: 'host-fresh-code', onclick: on.freshCode }, '새 코드로 열기'))) : null,
-      participantList(room, { canAdmin: true, transfer: on.transfer, remove: on.remove, paths: s.paths }),
+      participantList(room, { canAdmin: true, transfer: on.transfer, remove: on.remove, removeBot: on.removeBot, paths: s.paths }),
+      botBox,
       stateBox,
       h('p.note', null, s.hostPlays
         ? '이 탭이 서버입니다. 닫거나 새로 고치면 진행 중인 판이 사라집니다.'

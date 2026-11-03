@@ -79,16 +79,16 @@
     return b && Array.isArray(b.styles) ? b.styles.filter((/** @type {any} */ s) => s && typeof s.id === 'string') : [];
   }
   /**
-   * 한 화면 컴퓨터 자리의 이름 후보: 화면 담당이 직접 지은 흔한 한국 이름 40개(두 글자 32, 세 글자 8).
-   * 판을 열 때 컴퓨터 자리마다 사람 자리 이름·다른 컴퓨터 이름과 겹치지 않게 무작위로 뽑는다(새 판에서는 그대로).
-   * 모두 room.js cleanName 을 통과한다(1~12자, 'random' 아님, 제어 문자 없음).
+   * 컴퓨터 자리의 이름 후보: 화면 담당이 직접 지은 흔한 한국 이름 40개(두 글자 32, 세 글자 8).
+   * 한 화면은 판을 열 때 컴퓨터 자리마다, 온라인(서버 패널의 [컴퓨터 추가])은 더할 때 하나씩, 이미 쓰는 이름과 겹치지 않게
+   * 무작위로 뽑는다(pickBotName, 새 판에서는 그대로). 모두 room.js cleanName 을 통과한다(1~12자, 'random' 아님, 제어 문자 없음).
    */
   const BOT_NAMES = [
     '민준', '서연', '지우', '하준', '서윤', '도윤', '지호', '수아', '예준', '하은', '시우', '지아', '은우', '채원', '현우', '다은',
     '지민', '수빈', '윤서', '우진', '영희', '철수', '미영', '정훈', '상민', '은정', '성호', '혜진', '동현', '수진', '재민', '경아',
     '김민수', '이지은', '박현수', '최유진', '정다운', '강하늘', '윤슬기', '조은별',
   ];
-  /** 한 화면 설정에서 컴퓨터 자리 스타일 '무작위'(기본값). 판을 열 때 Zap.bots.styles 가운데 하나로 바꾼다 */
+  /** 컴퓨터 자리 스타일 '무작위'(기본값). 한 화면은 판을 열 때, 온라인은 컴퓨터를 더할 때 Zap.bots.styles 가운데 하나로 바꾼다 */
   const RANDOM_STYLE = 'random';
   /** 사건 가운데 판 위 움직임이 없는 것(차례 넘기기·마지막 라운드·자동 패스) */
   const QUIET_EVENTS = { endTurn: 1, finalRound: 1, autoPass: 1 };
@@ -157,6 +157,10 @@
     music: loadMusic(),
     /** @type {string} */
     toast: '',
+    /** 서버 패널(대기실): 다음에 더할 컴퓨터의 스타일 선택 — 'random'(무작위, 기본값) 또는 Zap.bots.styles 의 id */
+    hostBotStyle: RANDOM_STYLE,
+    /** 서버 패널: 컴퓨터를 더하거나 빼지 못했을 때의 짧은 알림(컴퓨터 자리 칸 안) */
+    botError: '',
   };
   /** @type {any} */
   let toastTimer = null;
@@ -166,7 +170,11 @@
   let lastSeat = '';
   /** 세션을 구분하는 번호: 나간 뒤 늦게 도착한 옛 연결의 소식을 버리기 위한 것 */
   let sessionNo = 0;
-  /** 한 화면: 붙여 둔 컴퓨터 상대들(Zap.bots.attach 가 돌려준 것). 세션을 닫거나 새로 열 때 모두 멈춘다 @type {Array<{stop:() => void}>} */
+  /**
+   * 붙여 둔 컴퓨터 상대들(Zap.bots.attach 가 돌려준 것). 세션을 닫거나 새로 열 때 모두 멈춘다.
+   * 온라인(서버 화면)은 자리 이름을 함께 둔다(서버 패널의 [빼기]로 그 하나만 멈추게). 한 화면은 name 이 없다.
+   * @type {Array<{stop:() => void, name?:string}>}
+   */
   let botHandles = [];
   /** 한 화면: 보이는 사람 자리가 방금 바뀌어, 다음에 올리는 화면 정보에서 판을 새로 시작해야 하는지 */
   let seatMoved = false;
@@ -175,6 +183,15 @@
     const list = botHandles;
     botHandles = [];
     for (const b of list) { try { b.stop(); } catch (e) { /* 이미 멈춤 */ } }
+  }
+
+  /** 온라인: 그 이름의 컴퓨터 상대 하나만 멈춘다 @param {string} name */
+  function stopBot(name) {
+    const keep = [];
+    for (const b of botHandles) {
+      if (b.name === name) { try { b.stop(); } catch (e) { /* 이미 멈춤 */ } } else keep.push(b);
+    }
+    botHandles = keep;
   }
 
   /** @type {any} */ (window).__zap = { mode: null, host: null, client: null };
@@ -231,7 +248,7 @@
     S.room = null; S.view = null; S.events = []; S.boardReset = false; S.watching = false; S.takenOver = ''; S.closingReason = ''; S.announce = false; lastSeat = '';
     if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
     S.overlay = null; S.first = 'random'; S.copied = false; S.joining = false;
-    S.connStatus = 'connecting'; S.hostStatus = 'connecting'; S.formError = '';
+    S.connStatus = 'connecting'; S.hostStatus = 'connecting'; S.formError = ''; S.botError = '';
     /** @type {any} */ (window).__zap = { mode: null, host: null, client: null };
   }
 
@@ -428,20 +445,29 @@
   }
 
   /**
-   * 판을 열 때의 자리 이름: 사람 자리는 그대로, 컴퓨터 자리는 BOT_NAMES 에서 무작위로(사람 이름·먼저 뽑은 컴퓨터 이름과 겹치지 않게,
-   * 비교는 nameKey). 후보가 바닥나면 '컴퓨터 n'.
+   * 컴퓨터 이름 하나: BOT_NAMES 가운데 이미 쓰는 이름(taken, nameKey 로 비교 — 대소문자·NFC 무시)이 아닌 것을 무작위로.
+   * 후보가 바닥나면 '컴퓨터 n'(겹치지 않는 가장 작은 n). 한 화면(drawBotNames)과 온라인(addOnlineBot)이 함께 쓴다.
+   * @param {Set<string>} taken @returns {string}
+   */
+  function pickBotName(taken) {
+    const pool = BOT_NAMES.filter((nm) => !taken.has(nameKey(nm)));
+    if (pool.length) return pool[Math.floor(Math.random() * pool.length)];
+    let name = '';
+    for (let k = 1; !name || taken.has(nameKey(name)); k++) name = '컴퓨터 ' + k;
+    return name;
+  }
+
+  /**
+   * 판을 열 때의 자리 이름: 사람 자리는 그대로, 컴퓨터 자리는 pickBotName 으로(사람 이름·먼저 뽑은 컴퓨터 이름과 겹치지 않게).
    * @param {string[]} humanNames 자리마다 사람 이름(컴퓨터 자리는 무시) @param {boolean[]} bots @returns {string[]}
    */
   function drawBotNames(humanNames, bots) {
     /** @type {Set<string>} */
     const taken = new Set();
     bots.forEach((b, i) => { if (!b) taken.add(nameKey(humanNames[i])); });
-    const pool = BOT_NAMES.filter((nm) => !taken.has(nameKey(nm)));
     return bots.map((b, i) => {
       if (!b) return humanNames[i];
-      let name = '';
-      if (pool.length) name = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
-      else for (let k = 1; !name || taken.has(nameKey(name)); k++) name = '컴퓨터 ' + k;
+      const name = pickBotName(taken);
       taken.add(nameKey(name));
       return name;
     });
@@ -455,12 +481,31 @@
   }
 
   /**
-   * 한 화면 판에서 상대 칸을 눌러 펼쳤을 때 맨 아래 한 줄(판 셸의 opts.seatNote): 컴퓨터 자리면 '스타일 이름 — 한 줄 설명', 사람 자리는 null.
+   * 그 자리 컴퓨터 상대의 스타일 id(사람 자리·모르면 null). 한 화면은 판을 열 때 정한 S.localBots,
+   * 온라인(서버 화면·서버 겸 플레이어·원격 참가자)은 방 정보의 참가자 bot 칸(컴퓨터 자리에만 있음).
+   * @param {number} seat @returns {string|null}
+   */
+  function botStyleAt(seat) {
+    if (S.local) return S.localBots[seat] || null;
+    if (!S.room) return null;
+    const p = S.room.participants.find((x) => x.seat === seat && !!x.bot);
+    return p && typeof p.bot === 'string' ? p.bot : null;
+  }
+
+  /** 지금 세션에 컴퓨터 자리가 있는지(한 화면 또는 온라인 방) */
+  function hasBotSeats() {
+    if (S.local) return S.localBots.some((b) => !!b);
+    return !!(S.room && S.room.participants.some((p) => !!p.bot));
+  }
+
+  /**
+   * 판에서 상대 칸을 눌러 펼쳤을 때 맨 아래 한 줄(판 셸의 opts.seatNote): 컴퓨터 자리면 '스타일 이름 — 한 줄 설명', 사람 자리는 null.
+   * 한 화면과 온라인이 같다(온라인은 참가자 누구나 — 서버 화면 포함 — 같은 줄을 본다). 모르는 스타일 id 면 null.
    * 스타일은 판 위 다른 어디에도 글자로 보이지 않는다.
    * @param {number} seat @returns {{title:string, text:string}|null}
    */
   function seatNote(seat) {
-    const id = S.local ? S.localBots[seat] : null;
+    const id = botStyleAt(seat);
     if (!id) return null;
     const st = botStyles().find((s) => s.id === id);
     return st ? { title: String(st.label || st.id), text: typeof st.desc === 'string' ? st.desc : '' } : null;
@@ -672,6 +717,71 @@
     render();
   }
 
+  /* ───────────── 온라인 컴퓨터 자리 (서버 화면) ───────────── */
+
+  /** @returns {boolean} 이 서버 화면에서 컴퓨터 자리를 더할 수 있는지(상대 모듈과 net 의 addBot 이 있음) */
+  function canHostBots() {
+    return !!S.host && typeof S.host.addBot === 'function' && canUseBots();
+  }
+
+  /**
+   * 서버 패널(대기실)의 [컴퓨터 추가]: 이름은 지금 참가자 이름과 겹치지 않게 BOT_NAMES 에서, 스타일은 고른 것(무작위면 이때 하나를
+   * 뽑아 그 컴퓨터의 스타일로 고정 — 새 판에서도 그대로). 방에 앉힌 기기 안 연결에 상대를 붙이고 손잡이를 이름과 함께 기억한다.
+   * 상대에게는 그 연결 하나만 넘긴다(한 화면과 같음). 그 연결의 오류는 화면이 듣지 않는다(상대 모듈이 다시 고른다).
+   */
+  function addOnlineBot() {
+    const host = S.host;
+    const B = botsApi();
+    if (!host || !B || !canHostBots()) return;
+    const room0 = host.snapshot().room;
+    if (room0.status !== 'lobby') return;
+    S.botError = '';
+    const style = resolveStyle(S.hostBotStyle);
+    /** @type {Set<string>} 이번에 시도했다가 name_taken 으로 거절된 이름 */
+    const tried = new Set();
+    /** @type {ClientConnection|null} */
+    let client = null;
+    /** @type {string} */
+    let error = 'bad_state';
+    let name = '';
+    // 이름이 겹치면(그 사이 사람이 같은 이름으로 들어옴) 다른 이름으로 두 번까지 다시
+    for (let k = 0; k < 3; k++) {
+      const taken = new Set(tried);
+      for (const p of host.snapshot().room.participants) taken.add(nameKey(p.name));
+      name = pickBotName(taken);
+      const r = /** @type {any} */ (host.addBot(name, style));
+      if (r && r.ok && r.client) { client = r.client; break; }
+      error = (r && r.error) || 'bad_state';
+      if (error !== 'name_taken') break;
+      tried.add(nameKey(name));
+    }
+    if (!client) {
+      S.botError = '컴퓨터를 더하지 못했습니다: ' + text.errorText(error);
+      render();
+      return;
+    }
+    try {
+      const got = B.attach(client, style, { delayMs: botDelay() });
+      if (got && typeof got.stop === 'function') botHandles.push({ name, stop: () => got.stop() });
+    } catch (e) {
+      if (window.console) window.console.error('[zap.bots] attach', e);
+      try { host.removeBot(name); } catch (e2) { /* 이미 빠짐 */ }
+      S.botError = '컴퓨터 상대를 붙이지 못했습니다.';
+    }
+    render();
+  }
+
+  /** 서버 패널(대기실)의 컴퓨터 줄 [빼기]: 방에서 빼고(그 연결을 닫음) 그 상대를 멈춘다 @param {string} name */
+  function removeOnlineBot(name) {
+    const host = S.host;
+    if (!host || typeof host.removeBot !== 'function') return;
+    S.botError = '';
+    const r = host.removeBot(name);
+    if (r && r.ok === false) S.botError = '컴퓨터를 빼지 못했습니다: ' + text.errorText(r.error);
+    else stopBot(name);
+    render();
+  }
+
   /* ───────────── 명령 ───────────── */
 
   /** @returns {boolean} 지금 이 화면에서 방장 조작을 할 수 있는지 */
@@ -819,15 +929,17 @@
     const newView = S.view !== lastBoard.view;
     const reset = !sameHost || S.boardReset;
     let events = sameHost && newView && !reset && S.events.length ? S.events.slice() : undefined;
-    // 한 화면 + 컴퓨터: 움직임이 없는 사건(차례 넘기기·마지막 라운드·자동 패스)만 온 갱신은 움직임을 새로 시작하지 않고 그리기만 한다.
-    // 새 움직임은 앞 움직임을 지우고 시작하므로, 컴퓨터가 산 카드·받은 귀족이 날아가는 중에 바로 이어 온 '차례 넘기기'가 그것을 자르지 않게.
-    // 사건은 버리지 않고 다음 갱신에 함께 넘긴다(판의 최근 일 기록용). 그 사이 사람 차례가 시작되면 차례 알림은 announceTurn 이 맡는다.
-    const quiet = !!(S.local && events && S.localBots.some((b) => b) && events.every((e) => /** @type {any} */ (QUIET_EVENTS)[e.type]));
+    // 컴퓨터 자리가 있는 판(한 화면, 또는 컴퓨터 자리가 있는 온라인 방): 움직임이 없는 사건(차례 넘기기·마지막 라운드·자동 패스)만 온
+    // 갱신은 움직임을 새로 시작하지 않고 그리기만 한다. 새 움직임은 앞 움직임을 지우고 시작하므로, 컴퓨터가 산 카드·받은 귀족이
+    // 날아가는 중에 바로 이어 온 '차례 넘기기'가 그것을 자르지 않게. 사건은 버리지 않고 다음 갱신에 함께 넘긴다(판의 최근 일 기록용).
+    // 그 사이 사람 차례가 시작되면 차례 알림은 announceTurn 이 맡는다(한 화면은 localSync 의 S.announce, 온라인은 이 갱신 자체).
+    const quiet = !!(events && hasBotSeats() && events.every((e) => /** @type {any} */ (QUIET_EVENTS)[e.type]));
     if (quiet) events = undefined;
     if ((newView || reset) && !quiet) S.events = [];
     S.boardReset = false;
-    // 한 화면: 새 차례를 새로 그릴 때(가림막을 걷은 뒤 포함) 차례 시작 빛남·알림 소리
-    const announceTurn = !!(S.local && S.announce && S.view.phase === 'action' && S.view.current === S.view.you);
+    // 한 화면: 새 차례를 새로 그릴 때(가림막을 걷은 뒤 포함) 차례 시작 빛남·알림 소리.
+    // 온라인: 움직임을 건너뛴 갱신(quiet)이면 움직임이 하던 '내 차례 시작' 알림을 판에 맡긴다(판은 내 차례가 막 시작됐을 때만 알린다)
+    const announceTurn = S.local ? !!(S.announce && S.view.phase === 'action' && S.view.current === S.view.you) : quiet;
     S.announce = false;
     lastBoard.host = host; lastBoard.view = S.view; lastBoard.sig = sig;
     V2.board.render(host, boardView(S.view), {
@@ -839,8 +951,8 @@
       reset,
       events,
       announceTurn,
-      // 한 화면: 상대 칸을 눌러 펼치면 컴퓨터 자리만 '스타일 이름 — 설명' 한 줄(판 위 다른 곳에는 스타일이 없다)
-      seatNote: S.local ? seatNote : undefined,
+      // 상대 칸을 눌러 펼치면 컴퓨터 자리만 '스타일 이름 — 설명' 한 줄(한 화면·온라인 같음, 판 위 다른 곳에는 스타일이 없다)
+      seatNote,
       on: {
         move: sendMove,
         newGame: admin_ ? () => { S.overlay = 'newgame'; render(); } : undefined,
@@ -869,6 +981,14 @@
       hostPlays: !!S.client,
       names: info.names,
       paths: S.host && typeof S.host.paths === 'function' ? S.host.paths() : undefined,
+      // 컴퓨터 자리 칸(대기실에서만 보인다. net 에 addBot 이 없는 연결 — 미리보기용 가짜 연결 등 — 이면 칸이 없다).
+      // 상대 모듈이 없으면 칸은 보이되 꺼진다. 고른 스타일이 목록에 없으면(스타일 파일이 바뀜) 무작위로
+      bots: S.host && typeof S.host.addBot === 'function' ? {
+        canUse: canHostBots(),
+        styles: botStyles().map((s) => ({ id: s.id, label: String(s.label || s.id) })),
+        style: botStyles().some((s) => s.id === S.hostBotStyle) ? S.hostBotStyle : RANDOM_STYLE,
+        error: S.botError,
+      } : undefined,
     }, {
       setFirst: (v) => { S.first = v; },
       start: () => admin({ action: 'start', first: firstChoice() }),
@@ -876,6 +996,9 @@
       remove: (name) => admin({ action: 'remove', name }),
       copy: copyLink,
       freshCode: reopenWithFreshCode,
+      botStyle: (v) => { S.hostBotStyle = v || RANDOM_STYLE; S.botError = ''; render(); },
+      addBot: addOnlineBot,
+      removeBot: removeOnlineBot,
     });
   }
 

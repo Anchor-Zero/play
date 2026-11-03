@@ -196,6 +196,7 @@
  * @property {boolean} connected
  * @property {number|null} seat     판이 시작되면 자리 번호, 대기실에서는 null
  * @property {boolean} leader       방장 여부
+ * @property {string} [bot]   컴퓨터 자리면 그 스타일 id (2026-11-03). 사람 자리에는 이 칸이 없다
  */
 
 /**
@@ -270,6 +271,10 @@
  * @property {(connId:string, msg:ClientMsg) => void} receive
  * @property {(cmd:AdminCommand) => {ok:true}|{ok:false, error:RoomError}} serverCommand   서버 화면의 명령 (최우선 권한)
  * @property {() => RoomSnapshot} snapshot
+ * @property {(connId:string, name:string, style:string) => {ok:true}|{ok:false, error:RoomError}} joinBot
+ *   (2026-11-03) 서버 전용: 이미 connect 한 자리 없는 연결을 컴퓨터 자리로 앉힌다. 메시지(join)로는 컴퓨터 자리를 만들 수 없다.
+ *   컴퓨터 자리는 방장이 되지 않고, claim 으로 잡을 수 없으며(늘 seat_taken), 사람이 1명 이상 있어야 판을 시작할 수 있다.
+ *   대기실에서 그 연결이 leave 하거나 끊기면 유예 없이 바로 목록에서 빠진다
  */
 
 /** @typedef {{createRoom: (opts:RoomOptions) => Room}} RoomAPI */
@@ -319,6 +324,10 @@
  * @property {(ev:'change'|'status'|'events'|'path', fn:(data:any) => void) => void} on   'change' → RoomSnapshot, 'status' → ConnStatus, 'events' → GameEvent[] (참가자에게 보내는 것과 같은 사건, 서버 화면의 기록용), 'path' → Record<이름, ConnPath> (2026-10-29)
  * @property {() => ConnStatus} status
  * @property {() => Record<string, ConnPath>} paths   참가자 이름 → 그 사람 연결의 경로 (2026-10-29). 접속 중이고 판정이 끝난 원격 참가자만(끊긴 사람·자리 없는 구경꾼·기기 안 연결은 없음)
+ * @property {(name:string, style:string) => ({ok:true, client:ClientConnection}|{ok:false, error:RoomError})} addBot
+ *   (2026-11-03) 대기실에서 컴퓨터 자리 하나를 이 서버 기기 안 연결로 앉힌다. 돌려준 client 에 화면이 Zap.bots.attach 를 건다
+ * @property {(name:string) => ({ok:true}|{ok:false, error:RoomError})} removeBot
+ *   (2026-11-03) 대기실에서만: 그 컴퓨터 자리의 연결을 닫아(leave) 목록에서 뺀다
  * @property {() => void} close
  */
 
