@@ -7,8 +7,8 @@
  *
  * 지금 구현한 것: 계획 종류 goalCard(와 계획 없음 'none'), nobleBundle(수집형, 이 파일 끝의 Zap.botsL2.collector), 계기 planGone·planBought·closerT3(+tie·newCardOptimism)·planColorDry·rivalBoughtMain·drawnT3(충동형),
  * 곁다리 귀족(sideNoble, 사라지면 새로 정함), 실수 phaseCarry, 단계 build·score 의 전환(toScore)과
- * 되돌아가기(back), 다시 판정(rejudge), S4 왕복 잠금. 구현하지 않은 것(검사가 거부한다): nobleBundle·rolling·reservedAnchor, 곁다리 귀족,
- * 계기 better·planColorDry·planDryTurns·swapStreak·rivalBoughtMain·raceAbandon·nobleTaken, 기다림 단계, 태세, 경주 셈, 실수 phaseCarry·newCardOptimism.
+ * 되돌아가기(back), 다시 판정(rejudge), S4 왕복 잠금, 그리고 수집형의 계기 raceAbandon·nobleTaken·경주 셈(collector). 구현하지 않은 것(검사가 거부한다):
+ * 계획 종류 rolling·reservedAnchor(와 anchor 칸), 계기 better·planDryTurns·swapStreak, 기다림 단계(wait), 태세(stance). 목록의 기준은 hooks.js 의 IMPL·PLANNED 와 framework-l2.md 12절.
  *
  * 인간상과 맞춘 것 두 가지(보고서에 적음):
  *  - 되돌아가기(phase.back)는 '목표를 잃음'(planGone)으로 다시 세울 때만 판정한다. 산 뒤(planBought)·새 카드로 바꿀 때(closerT3)는

@@ -5,8 +5,9 @@
  * docs/ai/framework-l2.md 7절의 기억 mem.l2 의 모양과 갱신. 차례를 넘는 목표 카드는 초보 기억 mem.plan(초보 틀 11.4)을 그대로 쓰고,
  * 여기에는 목표에서 끌어낸 색·단계·다시 세운 기록처럼 카드 한 장으로 담기지 않는 것만 둔다(7.1).
  * l2 가 없는 값 파일에서는 만들지도 갱신하지도 않는다(engine.js 가 부르지 않는다). rng 를 부르지 않는다.
- * 지금 채우는 칸은 중수 신중형이 쓰는 것과 사건 기록(oppLog·oppDeckReserved)뿐이다. 맞수(rivals)·마름 셈(dryTurns)·
- * 서두름(hurry)·덱 블라인드(blindUsed)·견제 연속(blockStreak)·놓친 귀족(nobleLateIds)·직전 최상위(lastTopId)는 자리만 두고 쓰지 않는다.
+ * 지금 채우는 칸은 아래 newMem 의 칸들이다: 신중형·충동형·수집형이 쓰는 목표 색·단계·다시 세운 기록, 사건 기록(oppLog·oppDeckReserved),
+ * S4 잠금(pingPongUntil), 놓친 귀족(nobleLateIds, 조건 nobleLate), 덱에서 뽑은 3단계(drawnSeen, 충동형 drawnT3). 서두름 귀족(hurry)은 수집형이
+ * plan.js 의 collector 에서 이 기억에 더한다. 틀 7절의 맞수(rivals)·마름 셈(dryTurns)·덱 블라인드(blindUsed)·견제 연속(blockStreak)·직전 최상위(lastTopId)는 아직 없다.
  */
 (function () {
   'use strict';

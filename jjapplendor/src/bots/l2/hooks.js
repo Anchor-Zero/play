@@ -6,7 +6,7 @@
  * 이 파일의 어떤 함수도 불리지 않고, rng 도 불리지 않는다.
  *
  * 한 사람에게 필요한 만큼만 구현한다(지금은 중수 신중형·충동형·수집형. 수집형의 계산은 calc.js 끝, 판단은 plan.js 끝의 Zap.botsL2.collector). 틀에 이름이 있지만 아직 구현하지 않은 칸은 vocab.PLANNED 에 두고,
- * 값 파일이 그것을 쓰면 register 가 '아직 구현되지 않은 칸'으로 거부한다. 다음 사람(충동형·수집형)이 필요한 칸을 IMPL 로 옮기며 넓힌다.
+ * 값 파일이 그것을 쓰면 register 가 '아직 구현되지 않은 칸'으로 거부한다. 다음 사람(대기 중인 중수들, framework-l2.md 12.4)이 필요한 칸을 IMPL 로 옮기며 넓힌다.
  */
 (function () {
   'use strict';
@@ -274,7 +274,18 @@
     /** @param {L2Cand} x */
     function isPlan(x) { const m = host.mem(); return !!m.plan && x.card.id === m.plan.cardId; }
 
-    /** 6.1 내 차례 셈(지각 셈 needOf 위에 공급처). 처음 셀 때 실수 turnsNoSupply 를 한 번 굴린다 @param {CardDef} card @param {any} ctx */
+    /** 실수 turnsNoSupply 의 장면(3.2, 신5-4): 이 카드나 아직 못 사는 후보 중, 지각 셈으로 모자란 색의 공급처 더미가 1~3 인 카드가 있다
+     * @param {CardDef} card @param {any} ctx */
+    function lowPileScene(card, ctx) {
+      /** @param {CardDef} c */
+      const low = function (c) {
+        return host.needOf(c, ctx).missing.some(function (/** @type {Color} */ k) { const s = ctx.v.supply[k]; return s >= 1 && s <= 3; });
+      };
+      return low(card) || (ctx.cards || []).some(function (/** @type {L2Cand} */ x) { return !x.buy && low(x.card); });
+    }
+
+    /** 6.1 내 차례 셈(지각 셈 needOf 위에 공급처). 처음 셀 때, 모자란 색 더미가 1~3 인 후보가 있으면 실수 turnsNoSupply 를 한 번 굴린다
+     * (11-12 수정: 전에는 장면 조건 없이 굴렸다) @param {CardDef} card @param {any} ctx */
     function turns(card, ctx) {
       const X = TL();
       if (X && X.turnsCache[card.id] !== undefined) return X.turnsCache[card.id];
@@ -282,7 +293,7 @@
       if (supply && X) {
         if (X.rolls.turnsNoSupply === undefined) {
           const e = host.mistakeEntry('turnsNoSupply', ctx);
-          X.rolls.turnsNoSupply = e ? host.roll('turnsNoSupply', ctx, e) : false;
+          X.rolls.turnsNoSupply = e && lowPileScene(card, ctx) ? host.roll('turnsNoSupply', ctx, e) : false;
         }
         if (X.rolls.turnsNoSupply) supply = false;
       }
