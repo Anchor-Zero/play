@@ -327,3 +327,178 @@
     horizonByScore, boughtColor, oppLeft, turnsOptimistic, heavyOneColor, newDrawnT3,
   };
 })();
+
+/*
+ * 짭플렌더 — 컴퓨터 상대 둘째 층 ② 순수 계산 중 중수 수집형(nobleBundle)이 더하는 것 (Zap.botsL2.calc 에 더함)
+ *
+ * docs/ai/framework-l2.md 6.5(귀족 계획과 경주 셈)·6.6(oppWinNext)· 인간상 intermediate-collector.md 3절.
+ * 모두 view·자리·값만 받는 순수 함수다(입력을 바꾸지 않고 rng 를 부르지 않는다). 상대는 view 의 공개 칸(점수·보너스)만 읽는다.
+ * 통합 때 work/l2/calc.js(→ game/src/bots/l2/calc.js) 끝에 이 함수들을 붙이고 Z.botsL2.calc 에 더한다.
+ */
+(function () {
+  'use strict';
+  const Z = /** @type {any} */ (Zap);
+
+  /** @returns {Color[]} */
+  function colors() { return Z.data.COLORS; }
+  /** @param {string} id */
+  function nob(id) { return Z.data.noblesById[id]; }
+
+  /** 초보 7절 nobleShort 를 귀족 id 로: 그 귀족까지 남은 장수(calc.nobleShort(b, nb) 와 인자 순서가 달라 이름을 따로 둠) @param {string} id @param {Record<string, number>} bonuses */
+  function nobleLeft(id, bonuses) {
+    const nb = nob(id);
+    let s = 0;
+    for (const c of colors()) s += Math.max(0, nb.require[c] - (bonuses[c] || 0));
+    return s;
+  }
+
+  /** 귀족 조건의 색 @param {string} id @returns {Color[]} */
+  function nobleColorsOf(id) { const nb = nob(id); return colors().filter(function (c) { return nb.require[c] > 0; }); }
+
+  /** 필요 수: 귀족들이 색마다 요구하는 수의 최댓값 @param {string[]} ids @returns {Record<string, number>} */
+  function needOfNobles(ids) {
+    /** @type {Record<string, number>} */
+    const need = {};
+    for (const c of colors()) { need[c] = 0; for (const id of ids) need[c] = Math.max(need[c], nob(id).require[c]); }
+    return need;
+  }
+
+  /** 계획 색 중 보너스가 필요 수에 못 미친 색(모자란 색) @param {Record<string, number>|null} need @param {Record<string, number>} bonuses @returns {Color[]} */
+  function shortColors(need, bonuses) {
+    if (!need) return [];
+    return colors().filter(function (c) { return need[c] > 0 && (bonuses[c] || 0) < need[c]; });
+  }
+
+  /** 1·2단계 공개 카드 중 보너스가 이 색 집합에 든 장수 @param {PlayerView} v @param {Color[]} cols */
+  function colorCardsT12(v, cols) {
+    let n = 0;
+    for (const t of /** @type {Tier[]} */ ([1, 2])) for (const id of v.market[t]) if (id && cols.indexOf(Z.data.cardsById[id].bonus) >= 0) n++;
+    return n;
+  }
+
+  /** 6.5 bundlePlan: 판 시작의 귀족 묶음(두 장, 색 합집합 ≤ maxColors). 없으면 single 이면 한 장
+   * 고르는 순서: 1·2단계 공개 카드 중 묶음 색 카드 수 많은 것 → 필요 수 합 적은 것 → 왼쪽 귀족이 더 왼쪽인 것
+   * @param {PlayerView} v @param {{maxColors:number, single:boolean}} spec @returns {{nobles:string[], need:Record<string, number>}|null} */
+  function bundlePlan(v, spec) {
+    const ids = v.nobles.slice();
+    /** @param {string[]} grp */
+    const score = function (grp) {
+      /** @type {Color[]} */
+      const cols = [];
+      for (const id of grp) for (const c of nobleColorsOf(id)) if (cols.indexOf(c) < 0) cols.push(c);
+      const need = needOfNobles(grp);
+      let sum = 0;
+      for (const c of colors()) sum += need[c];
+      return { grp, cols, need, cards: colorCardsT12(v, cols), sum, left: Math.min.apply(null, grp.map(function (id) { return ids.indexOf(id); })) };
+    };
+    /** @param {any} a @param {any} b */
+    const cmp = function (a, b) { return b.cards - a.cards || a.sum - b.sum || a.left - b.left; };
+    const pairs = [];
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+      const s = score([ids[i], ids[j]]);
+      if (s.cols.length <= spec.maxColors) pairs.push(s);
+    }
+    if (pairs.length) { pairs.sort(cmp); return { nobles: pairs[0].grp, need: pairs[0].need }; }
+    if (!spec.single || !ids.length) return null;
+    const one = ids.map(function (id) { return score([id]); }).sort(cmp)[0];
+    return { nobles: one.grp, need: one.need };
+  }
+
+  /** 상대 중 그 귀족에 가장 가까운 남은 장수(보너스를 보는 상대만, 없으면 INF). 그 귀족의 색 보너스가 한 장도 없는 상대는
+   * '다가오는 상대'가 아니므로 세지 않는다(3절 '그 귀족에 다가오는 상대가 없으면 평소대로')
+   * @param {string} id @param {{seats:{seeB:boolean, P:{bonuses:Record<string, number>}}[]}} R */
+  function oppShort(id, R) {
+    const full = nobleLeft(id, {});
+    let best = Z.botsL2.calc.INF;
+    for (const r of R.seats) { if (!r.seeB) continue; const s = nobleLeft(id, r.P.bonuses); if (s < full) best = Math.min(best, s); }
+    return best;
+  }
+
+  /** 6.5 raceNobles: 계획 귀족마다 lead = 내 남은 장수 − 가장 가까운 상대의 남은 장수. lead ≥ abandonLead 면 포기, 아니고 lead ≥ hurryLead 면 서두름
+   * @param {PlayerView} v @param {number} you @param {string[]} nobles @param {any} R @param {{hurryLead:number, abandonLead:number}} race
+   * @returns {{drop:string[], hurry:string[]}} */
+  function raceNobles(v, you, nobles, R, race) {
+    const mb = v.players[you].bonuses;
+    /** @type {string[]} */ const drop = [];
+    /** @type {string[]} */ const hurry = [];
+    for (const id of nobles) {
+      const opp = oppShort(id, R);
+      if (opp >= Z.botsL2.calc.INF) continue;
+      const lead = nobleLeft(id, /** @type {any} */ (mb)) - opp;
+      if (lead >= race.abandonLead) drop.push(id);
+      else if (lead >= race.hurryLead) hurry.push(id);
+    }
+    return { drop, hurry };
+  }
+
+  /** 6.5 rebuildNoblePlan: 상대가 abandonLead 이상 앞선 귀족을 뺀 공개 귀족 중 내 남은 장수 최소
+   * (같으면 지금 보너스가 많은 색을 더 많이 쓰는 것 = 귀족 조건 색의 내 보너스 합 큰 것 → 왼쪽). 그 장수가 within 이하일 때만
+   * @param {PlayerView} v @param {number} you @param {any} R @param {{race:{abandonLead:number}, replanWithin:number}} P
+   * @returns {{nobles:string[], need:Record<string, number>}|null} */
+  function rebuildNoblePlan(v, you, R, P) {
+    const mb = /** @type {any} */ (v.players[you].bonuses);
+    const C = v.nobles.filter(function (id) { const o = oppShort(id, R); return !(o < Z.botsL2.calc.INF && nobleLeft(id, mb) - o >= P.race.abandonLead); })
+      .map(function (id) {
+        let use = 0;
+        for (const c of nobleColorsOf(id)) use += mb[c];
+        return { id, short: nobleLeft(id, mb), use, idx: v.nobles.indexOf(id) };
+      }).sort(function (a, b) { return a.short - b.short || b.use - a.use || a.idx - b.idx; });
+    if (!C.length || C[0].short > P.replanWithin) return null;
+    return { nobles: [C[0].id], need: needOfNobles([C[0].id]) };
+  }
+
+  /** 가까운 귀족: 남은 장수 최소(같으면 두 색 4·4 → 왼쪽). 받은 귀족(남은 0)도 그대로 센다 @param {PlayerView} v @param {string[]} nobles @param {Record<string, number>} bonuses @returns {string|null} */
+  function nearNoble(v, nobles, bonuses) {
+    const xs = nobles.map(function (id) { return { id, short: nobleLeft(id, bonuses), two: nobleColorsOf(id).length === 2 ? 0 : 1, idx: v.nobles.indexOf(id) }; })
+      .sort(function (a, b) { return a.short - b.short || a.two - b.two || a.idx - b.idx; });
+    return xs.length ? xs[0].id : null;
+  }
+
+  /** 귀족의 모자란 색(조건 > 보너스) @param {string} id @param {Record<string, number>} bonuses @returns {Color[]} */
+  function nobleMissing(id, bonuses) { const nb = nob(id); return colors().filter(function (c) { return nb.require[c] > (bonuses[c] || 0); }); }
+
+  /** 필터 nobleWithin: 남은 장수 1~n 인 공개 귀족들의 모자란 색 합집합 @param {PlayerView} v @param {number} you @param {number} n @returns {Color[]} */
+  function nobleWithinColors(v, you, n) {
+    const mb = /** @type {any} */ (v.players[you].bonuses);
+    /** @type {Color[]} */
+    const out = [];
+    for (const id of v.nobles) {
+      const s = nobleLeft(id, mb);
+      if (s >= 1 && s <= n) for (const c of nobleMissing(id, mb)) if (out.indexOf(c) < 0) out.push(c);
+    }
+    return out;
+  }
+
+  /** 6.6 oppWinNext(보너스·점수만으로 보는 사람의 꼴, 실수 4 내장): 어떤 상대가 보너스만으로 덮이는 공개 카드로 15 점에 닿는가.
+   * 귀족 +3 은 셈에 넣지 않는다(read.nobles 거짓). 상대 시야(r.P)는 readOpponents 가 만든 것을 그대로 쓴다
+   * @param {PlayerView} v @param {any} R */
+  function oppWinNext(v, R) {
+    const calc = Z.botsL2.calc;
+    for (const r of R.seats) {
+      if (!(r.seeB || r.seeT)) continue;
+      let best = 0;
+      for (const t of /** @type {Tier[]} */ ([1, 2, 3])) for (const id of v.market[t]) {
+        if (!id) continue;
+        const card = Z.data.cardsById[id];
+        if (card.points > best && calc.oppCanBuy(r, card)) best = card.points;
+      }
+      if (r.score + best >= 15) return true;
+    }
+    return false;
+  }
+
+  /** 3.2 oneDiscountMiss 가 걸리는 카드: 비용 색 셋 이상이고 보너스가 있는 비용 색이 있음. 빠뜨리는 색(색 순서 첫 색)을 돌려준다
+   * @param {CardDef} card @param {Record<string, number>} bonuses @returns {Color|null} */
+  function discountMissColor(card, bonuses) {
+    const C = colors();
+    if (C.filter(function (c) { return card.cost[c] > 0; }).length < 3) return null;
+    for (const c of C) if (card.cost[c] > 0 && (bonuses[c] || 0) > 0) return c;
+    return null;
+  }
+
+  Z.botsL2 = Z.botsL2 || {};
+  Z.botsL2.calc = Object.assign(Z.botsL2.calc || {}, {
+    nobleLeft, nobleColorsOf, needOfNobles, shortColors, bundlePlan, raceNobles, rebuildNoblePlan, nearNoble, nobleMissing,
+    nobleWithinColors, oppWinNext, discountMissColor,
+  });
+})();

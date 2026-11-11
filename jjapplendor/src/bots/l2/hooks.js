@@ -5,7 +5,7 @@
  * docs/ai/framework-l2.md 9.2 의 BotsL2API. engine.js 는 값 파일에 l2 가 있을 때만 이것을 부른다(0.4). 초보 값 파일에서는
  * 이 파일의 어떤 함수도 불리지 않고, rng 도 불리지 않는다.
  *
- * 한 사람에게 필요한 만큼만 구현한다(지금은 중수 신중형·충동형). 틀에 이름이 있지만 아직 구현하지 않은 칸은 vocab.PLANNED 에 두고,
+ * 한 사람에게 필요한 만큼만 구현한다(지금은 중수 신중형·충동형·수집형. 수집형의 계산은 calc.js 끝, 판단은 plan.js 끝의 Zap.botsL2.collector). 틀에 이름이 있지만 아직 구현하지 않은 칸은 vocab.PLANNED 에 두고,
  * 값 파일이 그것을 쓰면 register 가 '아직 구현되지 않은 칸'으로 거부한다. 다음 사람(충동형·수집형)이 필요한 칸을 IMPL 로 옮기며 넓힌다.
  */
 (function () {
@@ -16,38 +16,40 @@
 
   /** 구현한 둘째 층 어휘 */
   const IMPL = {
-    KEYS: ['turns', 'gain', 'rate', 'gemsPerPoint', 'mainInNobles', 'gapOrder', 'reserved', 'tierHigh', 'mainColor', 'planColor', 'feelCost', 'stepStones'],
-    FILTERS: ['engineCard', 'gapColor', 'completesNoble', 'gainPos', 'reachWin', 'finishes', 'threatened', 'inHorizon', 'planColor', 'offPlan', 'noGold', 'stepStone', 'missingDry'],
-    FILTER_OBJ: ['payMax', 'litPayMin', 'turnsMax', 'mainDry', 'costShape', 'any', 'not', 'gainMin', 'payPerPoint'],
+    KEYS: ['turns', 'gain', 'rate', 'gemsPerPoint', 'mainInNobles', 'gapOrder', 'reserved', 'tierHigh', 'mainColor', 'planColor', 'feelCost', 'stepStones',
+      'hurryNoble', 'nearNoble', 'gainRate'],
+    FILTERS: ['engineCard', 'gapColor', 'completesNoble', 'gainPos', 'reachWin', 'finishes', 'threatened', 'inHorizon', 'planColor', 'offPlan', 'noGold', 'stepStone', 'missingDry', 'shortColor'],
+    FILTER_OBJ: ['payMax', 'litPayMin', 'turnsMax', 'mainDry', 'costShape', 'any', 'not', 'gainMin', 'payPerPoint', 'nobleWithin', 'isTarget'],
     ACT_DO: ['reserve', 'guard', 'reserveDeck'],
-    PAIRS: ['missingTwo'],
-    FILLS: ['mainColor', 'secondColor', 'planCost', 'sideNoble', 'colorOrder'],
+    PAIRS: ['missingTwo', 'hurry'],
+    FILLS: ['mainColor', 'secondColor', 'planCost', 'sideNoble', 'colorOrder', 'nobleNeed'],
     PROTECTS: ['planMissing', 'planColors'],
-    ORDERS: [],
+    ORDERS: ['offPlanFirst', 'colorRev'],
     LOOKS: ['plan', 'gainBuy'],
-    PREFERS: ['left', 'plan'],
-    MISTAKE_IDS: ['oppGoldMiss', 'turnsNoSupply', 'finalBlind', 'newCardOptimism', 'offPlanNobleBlind', 'goldAsFree', 'phaseCarry'],
+    PREFERS: ['left', 'plan', 'near'],
+    MISTAKE_IDS: ['oppGoldMiss', 'turnsNoSupply', 'finalBlind', 'newCardOptimism', 'offPlanNobleBlind', 'goldAsFree', 'phaseCarry', 'oneDiscountMiss'],
     COND_NUM: ['mainBonusMin', 'mainBonusMax', 'planTurnsMin', 'planTurnsMax', 'myScoreMin', 'myScoreMax', 'oppScoreMin', 'oppScoreMax',
-      'anyScoreMin', 'anyScoreMax', 'leaderGapMin', 'noBuyMin', 'reservedMin', 'supplyGoldMax'],
-    COND_BOOL: ['shapeMet', 'planReserved', 'planLit', 'planThreat', 'boughtOffPlan', 'nobleLate'],
+      'anyScoreMin', 'anyScoreMax', 'leaderGapMin', 'noBuyMin', 'reservedMin', 'supplyGoldMax', 'planNoblesLeft'],
+    COND_BOOL: ['shapeMet', 'planReserved', 'planLit', 'planThreat', 'boughtOffPlan', 'nobleLate',
+      'hurry', 'oppWinNext', 'replannedThisTurn', 'boardShortColorNone'],
     COND_STR: ['phase'],
   };
   /** 틀(5.3·4.3)에 이름이 있으나 아직 구현하지 않은 것 */
   const PLANNED = {
-    KEYS: ['gainRate', 'perPoint', 'hurryNoble', 'nearNoble', 'nextHelp', 'planTurnsCut', 'planMissingMost', 'stepNet',
+    KEYS: ['perPoint', 'nextHelp', 'planTurnsCut', 'planMissingMost', 'stepNet',
       'blockValue', 'oppScore', 'seatNext', 'rivalFirst'],
-    FILTERS: ['shortColor', 'planColorCost', 'onPath', 'offPath', 'notDelayPlan', 'planMissingColor', 'pileCovers', 'stepWorth'],
-    FILTER_OBJ: ['perPointMax', 'payAfterBonusMax', 'planTurnsCut', 'nobleWithin'],
+    FILTERS: ['planColorCost', 'onPath', 'offPath', 'notDelayPlan', 'planMissingColor', 'pileCovers', 'stepWorth'],
+    FILTER_OBJ: ['perPointMax', 'payAfterBonusMax', 'planTurnsCut'],
     ACT_DO: ['block'],
-    PAIRS: ['compare', 'dominant', 'hurry', 'mainTwo'],
-    FILLS: ['nobleNeed', 'reservedNeed', 'leaderPile', 'drain', 'stepWorth'],
+    PAIRS: ['compare', 'dominant', 'mainTwo'],
+    FILLS: ['reservedNeed', 'leaderPile', 'drain', 'stepWorth'],
     PROTECTS: ['nextMissing', 'reservedNeed', 'drainColors'],
-    ORDERS: ['offPlanFirst', 'colorRev'],
+    ORDERS: [],
     LOOKS: ['bought', 'boughtBonus'],
-    PREFERS: ['near', 'rivalNear', 'refNear'],
+    PREFERS: ['rivalNear', 'refNear'],
     MISTAKE_IDS: ['oppBonusMiscount', 'oppNobleMiss', 'leaderTunnel',
-      'reservedAsScore', 'stepNoPay', 'oneDiscountMiss', 'dropProtect', 'goldAhead', 'tieBlindFinal', 'refStale', 'endTurnsFlip'],
-    COND: ['stance', 'planNoblesLeft', 'hurry', 'refGapMin', 'refGapMax', 'refScoreMin', 'refScoreMax', 'oppWinNext', 'planPileDropMin',
+      'reservedAsScore', 'stepNoPay', 'dropProtect', 'goldAhead', 'tieBlindFinal', 'refStale', 'endTurnsFlip'],
+    COND: ['stance', 'refGapMin', 'refGapMax', 'refScoreMin', 'refScoreMax', 'planPileDropMin',
       'oppMainBonusMin', 'usefulTakeNone', 'topSnatched'],
   };
   /** @param {any} x */
@@ -89,7 +91,7 @@
     if (!isObj(f) || typeof f.f !== 'string') { errs.push(at + ': 필터는 이름이나 {f, …} 객체여야 합니다'); return; }
     if (PLANNED.FILTER_OBJ.indexOf(f.f) >= 0) { errs.push(at + ': ' + NOT_YET + f.f); return; }
     if (IMPL.FILTER_OBJ.indexOf(f.f) < 0) { errs.push(at + ': 모르는 필터 객체 ' + f.f); return; }
-    const need = /** @type {Record<string, string[]>} */ ({ payPerPoint: ['k'], payMax: ['n'], litPayMin: ['n'], turnsMax: ['n'], gainMin: ['n'], mainDry: ['short', 'supplyMax'] });
+    const need = /** @type {Record<string, string[]>} */ ({ payPerPoint: ['k'], payMax: ['n'], litPayMin: ['n'], turnsMax: ['n'], gainMin: ['n'], nobleWithin: ['n'], mainDry: ['short', 'supplyMax'] });
     for (const k of need[f.f] || []) if (!isNum(f[k])) errs.push(at + '.' + f.f + '.' + k + ': 수여야 합니다');
     if (f.f === 'costShape' && !(Array.isArray(f.in) && f.in.every(function (/** @type {any} */ s) { return typeof s === 'string'; }))) errs.push(at + '.costShape.in: 문자열 배열이어야 합니다');
     if (f.f === 'any') { if (!Array.isArray(f.of) || !f.of.length) errs.push(at + '.any.of: 비지 않은 배열이어야 합니다'); else for (const g of f.of) checkFilter(g, base, at + '.any', errs); }
@@ -112,8 +114,8 @@
     const P = l2.plan;
     if (!isObj(P)) errs.push('l2.plan: 객체여야 합니다');
     else {
-      if (P.kind === 'nobleBundle' || P.kind === 'rolling' || P.kind === 'reservedAnchor') errs.push('l2.plan.kind: ' + NOT_YET + P.kind);
-      else if (P.kind !== 'goalCard' && P.kind !== 'none') errs.push('l2.plan.kind: 모르는 값 ' + P.kind);
+      if (P.kind === 'rolling' || P.kind === 'reservedAnchor') errs.push('l2.plan.kind: ' + NOT_YET + P.kind);
+      else if (P.kind !== 'goalCard' && P.kind !== 'none' && P.kind !== 'nobleBundle') errs.push('l2.plan.kind: 모르는 값 ' + P.kind);
       if (P.kind === 'goalCard') {
         tname(P.goal, 'l2.plan.goal');
         if (P.replanTarget !== undefined) tname(P.replanTarget, 'l2.plan.replanTarget');
@@ -124,7 +126,7 @@
         errs.push('l2.plan.shape: {main, second?, base?} (수) 여야 합니다');
       }
       if (typeof P.sideNoble !== 'boolean') errs.push('l2.plan.sideNoble: 참/거짓이어야 합니다');
-      for (const k of ['sticky', 'bundle', 'race', 'replanWithin', 'anchor']) if (P[k] !== undefined && k !== 'sticky') errs.push('l2.plan.' + k + ': ' + NOT_YET + k);
+      for (const k of ['anchor']) if (P[k] !== undefined) errs.push('l2.plan.' + k + ': ' + NOT_YET + k);
       if (!Array.isArray(P.switch)) errs.push('l2.plan.switch: 배열이어야 합니다');
       else P.switch.forEach(function (/** @type {any} */ sw, /** @type {number} */ i) {
         const at = 'l2.plan.switch[' + i + ']';
@@ -140,8 +142,9 @@
         }
         if (sw.on === 'planColorDry') { if (sw.exceptOneShort !== undefined && typeof sw.exceptOneShort !== 'boolean') errs.push(at + '.exceptOneShort: 참/거짓이어야 합니다'); return; }
         if (sw.on === 'rivalBoughtMain') { for (const k of ['left', 'keepTurns']) if (!isNum(sw[k])) errs.push(at + '.' + k + ': 수여야 합니다'); return; }
+        if (sw.on === 'raceAbandon' || sw.on === 'nobleTaken') return;   // 수집형(검사는 collector.validate)
         if (sw.on === 'drawnT3') { if (!isNum(sw.margin)) errs.push(at + '.margin: 수여야 합니다'); return; }
-        if (['better', 'planDryTurns', 'swapStreak', 'raceAbandon', 'nobleTaken'].indexOf(sw.on) >= 0) errs.push(at + '.on: ' + NOT_YET + sw.on);
+        if (['better', 'planDryTurns', 'swapStreak'].indexOf(sw.on) >= 0) errs.push(at + '.on: ' + NOT_YET + sw.on);
         else errs.push(at + '.on: 모르는 값 ' + sw.on);
       });
     }
@@ -172,7 +175,7 @@
       if (typeof rd.gold !== 'boolean') errs.push('l2.read.gold: 참/거짓이어야 합니다');
       if (rd.reserved) errs.push('l2.read.reserved: ' + NOT_YET + 'reserved');
       if (rd.nobles) errs.push('l2.read.nobles: ' + NOT_YET + 'nobles');
-      if (rd.focus !== 'goal') errs.push('l2.read.focus: ' + (['all', 'ref', 'planNobles'].indexOf(rd.focus) >= 0 ? NOT_YET : '모르는 값 ') + rd.focus);
+      if (rd.focus !== 'goal' && rd.focus !== 'planNobles') errs.push('l2.read.focus: ' + (['all', 'ref'].indexOf(rd.focus) >= 0 ? NOT_YET : '모르는 값 ') + rd.focus);
     }
     const hz = l2.endgame && l2.endgame.horizon;
     if (!isObj(hz) || typeof hz.includeBuy !== 'boolean') errs.push('l2.endgame.horizon: {kind, n?, includeBuy} 여야 합니다');
@@ -207,7 +210,7 @@
     });
     const nb = s.noble;
     if (isObj(nb)) {
-      if (nb.lookWhen !== undefined) errs.push('noble.lookWhen: ' + NOT_YET + 'lookWhen');
+      if (nb.lookWhen !== undefined) checkCondArray(nb.lookWhen, 'noble.lookWhen', errs, base.checkCond);
       if (nb.bonusMin !== undefined) errs.push('noble.bonusMin: ' + NOT_YET + 'bonusMin');
       if (!Array.isArray(nb.prefer)) errs.push('noble.prefer: 배열이어야 합니다');
       else for (const x of nb.prefer) if (IMPL.PREFERS.indexOf(x) < 0) errs.push('noble.prefer: ' + (PLANNED.PREFERS.indexOf(x) >= 0 ? NOT_YET : '모르는 값 ') + x);
@@ -216,6 +219,7 @@
       if (isObj(m) && m.protect !== undefined) errs.push('mistakes[' + i + '].protect: ' + NOT_YET + 'protect');
     });
     const sf = s.safety;
+    Z.botsL2.collector.validate(s, errs);
     if (isObj(sf)) for (const k of ['pingPongMax', 'blockStreakMax']) if (!(Number.isInteger(sf[k]) && sf[k] >= 1)) errs.push('safety.' + k + ': 1 이상의 정수여야 합니다');
   }
 
@@ -228,6 +232,11 @@
     const l2 = o.l2;
     if (!isObj(l2)) return o;
     l2.plan = Object.assign({ kind: 'none', second: 'none', shape: { main: 3 }, sideNoble: false, switch: [{ on: 'planGone' }, { on: 'planBought' }] }, l2.plan || {});
+    if (l2.plan.kind === 'nobleBundle') {
+      if (l2.plan.bundle === undefined) l2.plan.bundle = { maxColors: 3, single: true };
+      if (l2.plan.race === undefined) l2.plan.race = { hurryLead: 0, abandonLead: 2 };
+      if (l2.plan.replanWithin === undefined) l2.plan.replanWithin = 4;
+    }
     l2.phase = Object.assign({ initial: 'build', toScore: [{ shapeMet: true }], back: [], rejudge: false }, l2.phase || {});
     if (l2.stance === undefined) l2.stance = [];
     l2.count = Object.assign({ turns: 'sum3half', supply: false }, l2.count || {});
@@ -253,6 +262,8 @@
     const D = Z.data;
     const l2 = S.l2;
     let L = memory.newMem(l2.phase.initial);
+    /** 수집형 실수 oneDiscountMiss 가 값 파일에 있을 때만 그 셈(과 굴림)을 연다 */
+    const hasDiscountMiss = S.mistakes.some(function (/** @type {any} */ m) { return m.id === 'oneDiscountMiss'; });
 
     /** 이번 차례 문맥(P 가 만든다) @returns {any} */
     function TL() { const T = host.mem().turn; return T && T.l2 ? T.l2 : null; }
@@ -275,7 +286,8 @@
         }
         if (X.rolls.turnsNoSupply) supply = false;
       }
-      const t = calc.turnsOf(host.needOf(card, ctx), l2.count, supply ? ctx.v.supply : null);
+      const N0 = host.needOf(card, ctx);
+      const t = calc.turnsOf(hasDiscountMiss ? M.discountMiss(card, ctx, N0) : N0, l2.count, supply ? ctx.v.supply : null);
       if (X) X.turnsCache[card.id] = t;
       return t;
     }
@@ -344,9 +356,12 @@
     /** @param {any} ctx */
     function endFacts(ctx) { return calc.endgameFacts(ctx.v, you(ctx), l2.endgame); }
     /** 계획 색(주·보조) @returns {Color[]} */
-    function planColors() { return L.colors ? [L.colors.main].concat(L.colors.second ? [L.colors.second] : []) : []; }
+    function planColors() { return L.colors ? [L.colors.main].concat(L.colors.second ? [L.colors.second] : []) : l2.plan.kind === 'nobleBundle' ? M.planColors() : []; }
 
-    const B = { S, host, L: function () { return L; }, turns };
+    const B = { S, host, L: function () { return L; }, turns, M: /** @type {any} */ (null) };
+    /** 수집형(nobleBundle)의 판단 갈래(plan.js 끝). 만들 때 아무것도 부르지 않는다 */
+    const M = Z.botsL2.collector.mixin({ S, host, L: B.L, turns, readR, TL });
+    B.M = M;
 
     /** P (2.2): 내 차례의 첫 action 결정에서 한 번 @param {PlayerView} v @param {any} ctx */
     function planStep(v, ctx) {
@@ -426,6 +441,8 @@
             return off === val;
           }
         }
+        const r = M.cond(name, val, ctx);
+        if (r !== undefined) return r;
         throw new Error('l2: 모르는 조건 ' + name);
       },
 
@@ -445,6 +462,9 @@
           case 'feelCost': return calc.feelCost(ctx.v, you(ctx), x);
           case 'stepStones': return -calc.stepStonesOf(ctx.v, x.card, calc.mainCostColor(x.card));
         }
+        if (k === 'gainRate') return -gain(x.card, ctx) / Math.max(1, turnsX(x, ctx));
+        const r = M.key(k, x, ctx);
+        if (r !== undefined) return r;
         throw new Error('l2: 모르는 키 ' + k);
       },
 
@@ -470,6 +490,8 @@
             case 'offPlan': return planColors().indexOf(x.card.bonus) < 0;
             case 'noGold': return !!x.buy && x.payGold === 0;
           }
+          const r = M.filter(f, x, ctx);
+          if (r !== undefined) return r;
           throw new Error('l2: 모르는 필터 ' + f);
         }
         switch (f.f) {
@@ -490,6 +512,8 @@
           case 'any': return f.of.some(function (/** @type {any} */ g) { return host.filterOk(g, x, ctx); });
           case 'not': return !host.filterOk(f.of, x, ctx);
         }
+        const r = M.filter(f, x, ctx);
+        if (r !== undefined) return r;
         throw new Error('l2: 모르는 필터 ' + JSON.stringify(f));
       },
 
@@ -529,6 +553,7 @@
       /** 2.5 같은 색 2개의 색(초보 pair 가 정하지 못했을 때) @param {any} mode @param {any} N @param {Color[]} missing @param {any} ctx @returns {Color|null} */
       pair: function (mode, N, missing, ctx) {
         if (mode.pair === 'missingTwo') { for (const c of missing) if (host.legalTake2(ctx, c)) return c; }
+        if (mode.pair === 'hurry') return M.pair(mode, N, missing, ctx);
         return null;
       },
 
@@ -537,6 +562,7 @@
         if (name === 'mainColor') return L.colors && c === L.colors.main ? 0 : 1;
         if (name === 'secondColor') return L.colors && c === L.colors.second ? 0 : 1;
         if (name === 'sideNoble') return calc.nobleGapColors(ctx.v, you(ctx), L.nobles).indexOf(c) >= 0 ? 0 : 1;
+        if (name === 'nobleNeed') return M.fillRank(name, c, ctx);
         if (name === 'planCost') { const pc = planCard(); const i = pc ? host.needOf(pc, ctx).missing.indexOf(c) : -1; return i < 0 ? 99 : i; }
         return 0;
       },
@@ -547,6 +573,7 @@
         const look = S.noble.look;
         const claim = ctx.v.legal.filter(function (/** @type {any} */ x) { return x.type === 'claimNoble'; }).map(function (/** @type {any} */ x) { return x.nobleId; });
         if (!claim.length) return;
+        if (S.noble.lookWhen && planMod.anyCond(B, S.noble.lookWhen, ctx)) fired.push('lookWhen');
         if (look.indexOf('plan') >= 0 && L.nobles.some(function (/** @type {string} */ id) { return claim.indexOf(id) >= 0; })) fired.push('plan');
         const T = host.mem().turn;
         if (look.indexOf('gainBuy') >= 0 && T.bought) {
@@ -565,7 +592,7 @@
         }
       },
       /** 줄 전체를 보는 둘째 층 계기인가 @param {string} f */
-      lookAll: function (f) { return f === 'gainBuy'; },
+      lookAll: function (f) { return f === 'gainBuy' || f === 'lookWhen'; },
       /** claimable 중 prefer 순서의 첫째 @param {any[]} claim view.nobles 순서로 정렬된 claimNoble 수 @param {boolean} onlyPlan */
       prefer: function (claim, onlyPlan) {
         const xs = claim.filter(function (/** @type {any} */ m) { return !onlyPlan || L.nobles.indexOf(m.nobleId) >= 0; });
@@ -573,11 +600,14 @@
         xs.sort(function (/** @type {any} */ a, /** @type {any} */ b) {
           for (const p of pr) {
             if (p === 'plan') { const d = (L.nobles.indexOf(a.nobleId) >= 0 ? 0 : 1) - (L.nobles.indexOf(b.nobleId) >= 0 ? 0 : 1); if (d) return d; }
+            if (p === 'near') { const d = M.nearRank(a.nobleId) - M.nearRank(b.nobleId); if (d) return d; }
           }
           return 0;   // 'left': claim 이 이미 view.nobles 순서(안정 정렬)
         });
         return xs[0] || null;
       },
+      /** 2.6 반납 order(둘째 층 이름): 작을수록 먼저 돌려줌 @param {string} name @param {string} c */
+      orderRank: function (name, c) { const r = M.orderRank(name, c); return r === undefined ? 0 : r; },
       /** D3 끝: claimable 인데 받지 않고 차례를 넘기면 다음 차례의 조건 nobleLate 용으로 적는다 @param {PlayerView} v @param {Move|null} move */
       nobleEnd: function (v, move) {
         const ids = v.legal.filter(function (/** @type {any} */ x) { return x.type === 'claimNoble'; }).map(function (/** @type {any} */ x) { return x.nobleId; });

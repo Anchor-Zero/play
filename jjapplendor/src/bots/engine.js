@@ -1261,7 +1261,7 @@
           const lb = lv(b);
           if (la !== lb) return la < lb ? -1 : 1;
           for (const o of S.ret.order) {
-            const d = o === 'heldHigh' ? heldNow(b) - heldNow(a) : bonusOf(b) - bonusOf(a);
+            const d = o === 'heldHigh' ? heldNow(b) - heldNow(a) : o === 'bonusHigh' || !X ? bonusOf(b) - bonusOf(a) : X.orderRank(o, a) - X.orderRank(o, b);   // 둘째 층 order(2.6)
             if (d) return d;
           }
           return TOKEN_KEYS.indexOf(a) - TOKEN_KEYS.indexOf(b); // 색 순서, 황금은 맨 뒤
