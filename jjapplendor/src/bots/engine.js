@@ -108,6 +108,12 @@
   const COND_NUM = ['tokensMin', 'tokensMax', 'reservedMax', 'bonusMin', 'bonusMax', 'litMin', 'planNeedMin', 'planNeedMax', 'planIdleMin'];
   const COND_BOOL = ['roomToTake', 'supplyNoGems', 'supplyGold', 'finalRound', 'swappedLastTurn', 'afterReserve', 'snatched', 'holdsGold',
     'hasPlan', 'planOnBoard', 'planFresh', 'planPileEmpty', 'litScoringBoard'];
+  /** 초보 조건 칸 전부(둘째 층 조건 칸을 가르는 데 쓴다) */
+  const CORE_COND = COND_NUM.concat(COND_BOOL);
+  /** 검사하는 동안의 둘째 층 접점(값 파일에 l2 가 있을 때만, framework-l2 9.2). 없으면 초보 검사 그대로 @type {any} */
+  let VL2 = null;
+  /** 둘째 층이 넓힌 고정 목록(l2 가 없으면 초보 목록 그대로) @param {string[]} list @param {string} name @returns {string[]} */
+  function ext(list, name) { return VL2 ? list.concat(VL2.vocab.IMPL[name]) : list; }
   const MISSING_TIES = ['color', 'pileHigh'];
   const BONUS_SCOPES = ['all', 'single'];
   const NOBUY_RESETS = ['buy', 'reserve'];
@@ -189,7 +195,7 @@
     for (const k of Object.keys(w)) {
       if (COND_NUM.indexOf(k) >= 0) { if (!isNum(w[k])) errs.push(at + '.when.' + k + ': 수여야 합니다'); }
       else if (COND_BOOL.indexOf(k) >= 0) { if (typeof w[k] !== 'boolean') errs.push(at + '.when.' + k + ': 참/거짓이어야 합니다'); }
-      else errs.push(at + '.when: 모르는 조건 ' + k);
+      else if (!(VL2 && VL2.checkCondKey(k, w[k], at, errs))) errs.push(at + '.when: 모르는 조건 ' + k);
     }
   }
 
@@ -197,7 +203,7 @@
   function checkList(list, allowed, at, errs, nonEmpty) {
     if (!Array.isArray(list)) { errs.push(at + ': 배열이어야 합니다'); return; }
     if (nonEmpty && !list.length) errs.push(at + ': 비어 있으면 안 됩니다');
-    for (const x of list) if (allowed.indexOf(x) < 0) errs.push(at + ': 모르는 값 ' + JSON.stringify(x));
+    for (const x of list) if (allowed.indexOf(x) < 0) errs.push(at + ': ' + (VL2 && VL2.vocab.isPlanned(x) ? '아직 구현되지 않은 칸 ' : '모르는 값 ') + JSON.stringify(x));
   }
 
   /** @param {any} picks @param {string} field @param {string[]} errs */
@@ -212,13 +218,14 @@
         if (!isObj(st)) { errs.push(sat + ': 객체여야 합니다'); return; }
         checkList(st.from, SOURCES, sat + '.from', errs, true);
         if (st.accept !== undefined && ACCEPTS.indexOf(st.accept) < 0) errs.push(sat + '.accept: 모르는 값 ' + st.accept);
-        if (st.filter !== undefined) checkList(st.filter, FILTERS, sat + '.filter', errs);
+        if (st.filter !== undefined) { if (VL2) VL2.checkFilters(st.filter, FILTERS, sat + '.filter', errs); else checkList(st.filter, FILTERS, sat + '.filter', errs); }
+        if (st.when !== undefined) { if (VL2) checkCond(st.when, sat, errs); else errs.push(sat + '.when: 단계의 when 은 l2 가 있는 값 파일에서만 됩니다'); }
         if (st.window !== undefined && !(isNum(st.window) && st.window >= 0)) errs.push(sat + '.window: 0 이상의 수여야 합니다');
         for (const k of ['pointsMin', 'pointsMax']) {
           if (st[k] !== undefined && !(Number.isInteger(st[k]) && st[k] >= 0 && st[k] <= 5)) errs.push(sat + '.' + k + ': 0~5 의 정수여야 합니다');
         }
         if (isNum(st.pointsMin) && isNum(st.pointsMax) && st.pointsMin > st.pointsMax) errs.push(sat + ': pointsMin ≤ pointsMax 여야 합니다');
-        checkList(st.keys, KEYS, sat + '.keys', errs);
+        checkList(st.keys, ext(KEYS, 'KEYS'), sat + '.keys', errs);
       });
     }
   }
@@ -228,6 +235,9 @@
   function validate(s) {
     /** @type {string[]} */
     const errs = [];
+    // 둘째 층(framework-l2 5.6): l2 가 있을 때만 어휘를 넓히고 끝에서 l2 를 검사한다. 없으면 초보 검사 그대로
+    VL2 = s.l2 !== undefined ? (/** @type {any} */ (Zap).botsL2 || null) : null;
+    if (s.l2 !== undefined && !VL2) errs.push('l2: 둘째 층을 쓰려면 bots/l2/*.js 를 engine.js 뒤에 불러오십시오');
     if (typeof s.id !== 'string' || !s.id) errs.push('id: 빈 문자열이 아닌 문자열이어야 합니다');
     if (typeof s.label !== 'string' || !s.label) errs.push('label: 빈 문자열이 아닌 문자열이어야 합니다');
     if (s.level !== 'beginner' && s.level !== 'intermediate' && s.level !== 'expert') errs.push("level: 'beginner'·'intermediate'·'expert' 중 하나여야 합니다");
@@ -255,7 +265,7 @@
     else s.act.forEach(function (/** @type {any} */ r, /** @type {number} */ i) {
       const at = 'act[' + i + ']';
       if (!isObj(r)) { errs.push(at + ': 객체여야 합니다'); return; }
-      if (ACT_DO.indexOf(r.do) < 0) errs.push(at + '.do: 모르는 값 ' + r.do);
+      if (ext(ACT_DO, 'ACT_DO').indexOf(r.do) < 0) errs.push(at + '.do: ' + (VL2 && VL2.vocab.isPlanned(r.do) ? '아직 구현되지 않은 칸 ' : '모르는 값 ') + r.do);
       checkCond(r.when, at, errs);
       if (r.p !== undefined && !(isNum(r.p) && r.p >= 0 && r.p <= 1)) errs.push(at + '.p: 0~1 이어야 합니다');
       if (r.gate !== undefined && GATES.indexOf(r.gate) < 0) errs.push(at + '.gate: 모르는 값 ' + r.gate);
@@ -276,8 +286,8 @@
       if (!isObj(m)) { errs.push(at + ': 객체여야 합니다'); return; }
       checkCond(m.when, at, errs);
       if (m.target !== null && (typeof m.target !== 'string' || !targets[m.target])) errs.push(at + '.target: targets 에 없는 이름 ' + m.target);
-      if (PAIRS.indexOf(m.pair) < 0) errs.push(at + '.pair: 모르는 값 ' + m.pair);
-      checkList(m.fill, FILLS, at + '.fill', errs);
+      if (ext(PAIRS, 'PAIRS').indexOf(m.pair) < 0) errs.push(at + '.pair: ' + (VL2 && VL2.vocab.isPlanned(m.pair) ? '아직 구현되지 않은 칸 ' : '모르는 값 ') + m.pair);
+      checkList(m.fill, ext(FILLS, 'FILLS'), at + '.fill', errs);
       if (m.nextTarget !== undefined && (typeof m.nextTarget !== 'string' || !targets[m.nextTarget])) errs.push(at + '.nextTarget: targets 에 없는 이름 ' + m.nextTarget);
       if (m.nextCount !== undefined && !(Number.isInteger(m.nextCount) && m.nextCount >= 1)) errs.push(at + '.nextCount: 1 이상의 정수여야 합니다');
       if (m.missingTie !== undefined && MISSING_TIES.indexOf(m.missingTie) < 0) errs.push(at + '.missingTie: 모르는 값 ' + m.missingTie);
@@ -293,17 +303,17 @@
     });
     const ret = s.ret;
     if (!isObj(ret) || typeof ret.keepGold !== 'boolean') errs.push('ret: {keepGold, protect, order} 여야 합니다');
-    else { checkList(ret.protect, PROTECTS, 'ret.protect', errs); checkList(ret.order, ORDERS, 'ret.order', errs); }
+    else { checkList(ret.protect, ext(PROTECTS, 'PROTECTS'), 'ret.protect', errs); checkList(ret.order, ext(ORDERS, 'ORDERS'), 'ret.order', errs); }
     if (!isObj(s.noble)) errs.push('noble: 객체여야 합니다');
     else {
-      checkList(s.noble.look, LOOKS, 'noble.look', errs);
+      checkList(s.noble.look, ext(LOOKS, 'LOOKS'), 'noble.look', errs);
       if (s.noble.watchWithin !== undefined && !isNum(s.noble.watchWithin)) errs.push('noble.watchWithin: 수여야 합니다');
     }
     if (!Array.isArray(s.mistakes)) errs.push('mistakes: 배열이어야 합니다');
     else s.mistakes.forEach(function (/** @type {any} */ m, /** @type {number} */ i) {
       const at = 'mistakes[' + i + ']';
       if (!isObj(m)) { errs.push(at + ': 객체여야 합니다'); return; }
-      if (MISTAKE_IDS.indexOf(m.id) < 0) errs.push(at + '.id: 모르는 값 ' + m.id);
+      if (ext(MISTAKE_IDS, 'MISTAKE_IDS').indexOf(m.id) < 0) errs.push(at + '.id: ' + (VL2 && VL2.vocab.isPlanned(m.id) ? '아직 구현되지 않은 칸 ' : '모르는 값 ') + m.id);
       if (!(isNum(m.p) && m.p >= 0 && m.p <= 1)) errs.push(at + '.p: 0~1 이어야 합니다');
       checkCond(m.when, at, errs);
       if (m.tiers !== undefined && !(Array.isArray(m.tiers) && m.tiers.every(function (/** @type {any} */ t) { return t === 1 || t === 2 || t === 3; }))) {
@@ -329,6 +339,8 @@
       if (!Array.isArray(sf.noBuyResets) || sf.noBuyResets.indexOf('buy') < 0) errs.push("safety.noBuyResets: 'buy' 를 포함한 배열이어야 합니다");
       else checkList(sf.noBuyResets, NOBUY_RESETS, 'safety.noBuyResets', errs);
     }
+    if (VL2) VL2.validate(s, errs, { checkCond });
+    VL2 = null;
     return errs;
   }
 
@@ -349,9 +361,12 @@
     if (s.seatName === undefined) s.seatName = s.label;
     // safety 안의 새 칸 하나는 따로 채운다(framework 12.1)
     if (isObj(s.safety) && s.safety.noBuyResets === undefined) s.safety.noBuyResets = ['buy'];
-    const errs = validate(s);
+    // 둘째 층 기본값(framework-l2 5.2): l2 가 있을 때만
+    const L2api = /** @type {any} */ (Zap).botsL2;
+    const s2 = s.l2 !== undefined && L2api ? L2api.withDefaults(s) : s;
+    const errs = validate(s2);
     if (errs.length) throw new Error('Zap.bots.register(' + String(s.id) + '): ' + errs.join(' / '));
-    defs[s.id] = deepFreeze(s);
+    defs[s.id] = deepFreeze(s2);
     const info = { id: /** @type {string} */ (s.id), label: /** @type {string} */ (s.label), level: /** @type {'beginner'|'intermediate'|'expert'} */ (s.level), desc: typeof s.desc === 'string' ? s.desc : '' };
     for (let i = 0; i < styles.length; i++) {
       if (styles[i].id === s.id) { styles[i] = info; return; }
@@ -398,6 +413,11 @@
     }
     let mem = fresh();
     let seenTurns = -1;
+    /** 둘째 층(framework-l2 9.2). 값 파일에 l2 가 있을 때만 있고, 없으면 아래 모든 갈래가 닫혀 초보 그대로 돈다 @type {any} */
+    const X = S.l2 !== undefined ? /** @type {any} */ (Zap).botsL2.makeL2(S, rng, {
+      mem: function () { return mem; }, cardOf, needOf, condHolds, runTarget, legalReserve, legalTake2, setReserveTarget, roll, mistakeEntry, emit,
+      tag: function (/** @type {string} */ t) { tags.push(t); }, filterOk, avoidStatus, acceptOk,
+    }) : null;
     let sawOver = false;
 
     /* ── 기록 ── */
@@ -521,6 +541,7 @@
       if (w.planIdleMin !== undefined && !(mem.plan && mem.plan.idle >= w.planIdleMin)) return false;
       if (w.litScoringBoard !== undefined && ctx.litScoringBoard !== w.litScoringBoard) return false;
       if (w.planPileEmpty !== undefined && planPileEmpty(ctx) !== w.planPileEmpty) return false;
+      if (X) for (const k of Object.keys(w)) if (CORE_COND.indexOf(k) < 0 && !X.cond(k, /** @type {any} */ (w)[k], ctx)) return false;
       return true;
     }
 
@@ -708,6 +729,7 @@
         case 'payCount': return payCount(x.card, ctx);
         case 'slotLeft': return x.source === 'reserved' ? -1 : x.slot;
       }
+      if (X) return X.key(k, x, ctx);
       throw new Error('bad key ' + k);
     }
     /** 키를 앞에서부터 비교하는 안정 정렬, 끝은 늘 reading. 첫째와 둘째를 가른 키도 돌려준다.
@@ -731,7 +753,7 @@
       }
       return { list, decidedBy };
     }
-    /** @param {string} f @param {BotCand} x @param {Ctx} ctx */
+    /** @param {any} f 이름(초보·둘째 층) 또는 둘째 층 필터 객체 @param {BotCand} x @param {Ctx} ctx @returns {boolean} */
     function filterOk(f, x, ctx) {
       switch (f) {
         case 'free': return x.buy && x.payTotal === 0;
@@ -756,6 +778,7 @@
         case 'fresh': return x.source !== 'reserved' && mem.boardPrev !== null && mem.boardPrev.indexOf(x.card.id) < 0;
         case 'beatsPlan': return !mem.plan || x.card.points > planCard().points;
       }
+      if (X) return X.filter(f, x, ctx);
       throw new Error('bad filter ' + f);
     }
 
@@ -783,6 +806,7 @@
         }
       }
       for (const st of spec.stages) {
+        if (/** @type {any} */ (st).when && !condHolds(/** @type {any} */ (st).when, ctx)) continue;
         let from = st.from;
         const wide = from.length >= 2;
         if (wide && !skipKeepsPlan) from = from.filter(function (r) { return skip.indexOf(r) < 0; });
@@ -827,6 +851,7 @@
     /** @param {BotPick} spec @param {Ctx} ctx @param {(x:BotCand) => boolean} [extra] @returns {BotCand|null} */
     function runTarget(spec, ctx, extra) {
       for (const st of spec.stages) {
+        if (/** @type {any} */ (st).when && !condHolds(/** @type {any} */ (st).when, ctx)) continue;
         const Sx = ctx.cards.filter(function (x) {
           return st.from.indexOf(x.source) >= 0
             && pointsOk(st, x)
@@ -844,6 +869,7 @@
       /** @type {BotCand[]} */
       const out = [];
       for (const st of spec.stages) {
+        if (/** @type {any} */ (st).when && !condHolds(/** @type {any} */ (st).when, ctx)) continue;
         const Sx = ctx.cards.filter(function (x) {
           return x.card.id !== exclude && out.indexOf(x) < 0
             && st.from.indexOf(x.source) >= 0
@@ -908,6 +934,7 @@
           if (f === 'pileHigh') d = ctx.v.supply[b] - ctx.v.supply[a];
           else if (f === 'next') d = (nx.indexOf(a) < 0 ? 99 : nx.indexOf(a)) - (nx.indexOf(b) < 0 ? 99 : nx.indexOf(b));
           else if (f === 'targetSpare') d = (sp.indexOf(a) >= 0 ? 0 : 1) - (sp.indexOf(b) >= 0 ? 0 : 1);
+          else if (X && f !== 'heldLow') d = X.fillRank(f, a, ctx) - X.fillRank(f, b, ctx);
           else d = held(ctx.me, a) - held(ctx.me, b);
           if (d) return d;
         }
@@ -938,7 +965,9 @@
         const ma = missing.filter(function (c) { return ctx.v.supply[c] > 0; });
         if (ma.length >= 1 && ma.length <= 2 && N.by[ma[0]] >= 2) wanted = ma[0];
       }
+      if (!wanted && X && N) wanted = X.pair(mode, N, missing, ctx);
       if (wanted && legalTake2(ctx, wanted)) { T.taken = [wanted]; return legalTake2(ctx, wanted); }
+      if (/** @type {any} */ (mode).pairOnly) return null;   // 같은 색 2개만 시험하는 모드(둘째 층 2.5)
       /** @type {{next?:Color[], spare?:Color[]}} */
       const extra = {};
       if (mode.fill.indexOf('next') >= 0) {
@@ -1049,7 +1078,8 @@
           return m;
         }
         case 'take': {
-          for (const mode of S.take) {
+          const ms = /** @type {any} */ (rule).modes;
+          for (const mode of ms ? S.take.filter(function (/** @type {any} */ md) { return ms.indexOf(md.name) >= 0; }) : S.take) {
             if (!condHolds(mode.when, ctx)) continue;
             const m = composeTake(mode, ctx);
             if (m) return m;
@@ -1085,6 +1115,7 @@
           return m;
         }
       }
+      if (X) return X.rule(rule, ctx);
       return null;
     }
 
@@ -1112,6 +1143,7 @@
     function decideAction(v) {
       const ctx = ctxOf(v);
       const T = mem.turn;
+      if (X) X.beginD1(v, ctx);   // 둘째 층 P(계획 점검, 차례에 한 번)와 D1 시작의 finalBlind
       if (!T.d1Rolled) {
         // D1 시작의 굴림 둘(11-11, 12.10): 한 차례에 한 번. 값 파일에 그 항목이 있을 때만 rng 를 부른다
         T.d1Rolled = true;
@@ -1195,6 +1227,7 @@
         let set = [];
         if (kind === 'targetMissing') set = T.missing || [];
         else if (kind === 'justTaken') set = T.taken || [];
+        else if (X && kind !== 'targetCost') set = X.protectSet(kind, v);
         else if (kind === 'targetCost' && T.targetCard) {
           const card = /** @type {CardDef} */ (T.targetCard);
           set = C.filter(function (c) { return card.cost[c] - (S.perception.target.bonus ? me.bonuses[c] : 0) > 0; });
@@ -1272,9 +1305,10 @@
         if (allEq || (b[col] === 0 && mn >= 1)) fired.push('milestone');
       }
       if (L.indexOf('watched') >= 0 && bought && mem.watched && v.nobles.indexOf(mem.watched) >= 0) fired.push('watched');
+      if (X) X.looks(ctx, fired);   // 둘째 층 계기 plan·gainBuy (2.7)
       for (const f of fired) tags.push('look:' + f);
-      if (fired.some(function (f) { return LOOK_ALL.indexOf(f) >= 0; })) {
-        const pick = /** @type {MoveClaimNoble|undefined} */ (claim[0]);
+      if (fired.some(function (f) { return LOOK_ALL.indexOf(f) >= 0 || (X && X.lookAll(f)); })) {
+        const pick = /** @type {MoveClaimNoble|undefined} */ (X ? X.prefer(claim, false) || undefined : claim[0]);
         if (fired.indexOf('milestone') >= 0 && S.noble.watchWithin !== undefined) {
           const within = /** @type {number} */ (S.noble.watchWithin);
           const rest = v.nobles.filter(function (id) { return !pick || id !== pick.nobleId; }).map(function (id) {
@@ -1287,6 +1321,10 @@
         }
         if (pick) { tags.push('noble:look'); return { move: pick, point: 'D3' }; }
         return { move: endTurn, point: 'D3' };
+      }
+      if (X && fired.indexOf('plan') >= 0) {
+        const w = X.prefer(claim, true);
+        if (w) { tags.push('noble:plan'); return { move: w, point: 'D3' }; }
       }
       if (fired.indexOf('watched') >= 0) {
         const w = claim.find(function (m) { return /** @type {MoveClaimNoble} */ (m).nobleId === mem.watched; });
@@ -1344,6 +1382,7 @@
       if (!v) return;
       if ((seenTurns >= 0 && v.turnsTaken < seenTurns) || (sawOver && v.phase !== 'over')) {
         mem = fresh();
+        if (X) X.reset();
         emit({ type: 'newGame' });
       }
       seenTurns = v.turnsTaken;
@@ -1377,6 +1416,7 @@
     /** events 를 받을 때마다 (state 보다 먼저 온다) @param {GameEvent[]} evs @param {number|null} you */
     function observeEvents(evs, you) {
       if (!Array.isArray(evs) || you === null) return;
+      if (X) X.onEvents(evs, you);
       for (const ev of evs) {
         const e = /** @type {any} */ (ev);
         if (e.type === 'noble') { if (e.seat === you) mem.fanfare.self = true; else mem.fanfare.others = true; }
@@ -1412,6 +1452,7 @@
       } else if (v.phase === 'end') {
         const r = decideEnd(v);
         move = r.move;
+        if (X && r.point === 'D3') X.nobleEnd(v, move);
         rec.point = r.point;
       }
       rec.move = move;
@@ -1438,6 +1479,8 @@
       observeState, observeEvents, decide, retry,
       /** 시험용: 지금 기억(읽기만) */
       memory: function () { return mem; },
+      /** 시험용: 둘째 층 기억(l2 가 없으면 null) */
+      memoryL2: function () { return X ? X.memory() : null; },
       /** 마지막 대비 순서의 첫 수(판단 중 예외가 났을 때) @param {PlayerView} v */
       emergency: function (v) {
         if (v.phase === 'action') return fallbackAction(v.legal);
