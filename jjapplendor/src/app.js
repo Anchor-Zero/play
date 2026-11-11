@@ -73,10 +73,63 @@
     const b = /** @type {any} */ (Zap).bots;
     return b && typeof b.attach === 'function' ? b : null;
   }
-  /** @returns {Array<{id:string, label:string, desc?:string}>} 고를 수 있는 컴퓨터 스타일(등록 순서) */
+  /** @returns {Array<{id:string, label:string, level?:string, desc?:string}>} 고를 수 있는 컴퓨터 스타일(등록 순서) */
   function botStyles() {
     const b = botsApi();
     return b && Array.isArray(b.styles) ? b.styles.filter((/** @type {any} */ s) => s && typeof s.id === 'string') : [];
+  }
+  /**
+   * 컴퓨터 상대의 난이도(고르는 순서). 스타일의 level 이 이 가운데 하나다(level 이 없는 옛 스타일은 초보로 본다).
+   * 등록된 스타일이 없는 난이도는 설정 화면에서 고를 수 없게(보기는 꺼진 채) 보인다 — 값 파일이 들어오면 화면을 고치지 않아도 켜진다.
+   */
+  const BOT_LEVELS = [
+    { id: 'beginner', word: '초보' },
+    { id: 'intermediate', word: '중수' },
+    { id: 'expert', word: '고수' },
+  ];
+  /** 컴퓨터 자리 난이도의 기본값 */
+  const DEFAULT_LEVEL = 'beginner';
+  /** @param {{level?:string}} s @returns {string} 스타일의 난이도 */
+  function levelOf(s) { return typeof s.level === 'string' && s.level ? s.level : DEFAULT_LEVEL; }
+  /** @param {string} level @returns {Array<{id:string, label:string, level?:string, desc?:string}>} 그 난이도의 스타일(등록 순서) */
+  function stylesOfLevel(level) { return botStyles().filter((s) => levelOf(s) === level); }
+  /** @returns {Array<{id:string, label:string, enabled:boolean}>} 난이도 선택의 보기(스타일이 없는 난이도는 enabled:false) */
+  function levelChoices() {
+    const all = botStyles();
+    return BOT_LEVELS.map((l) => ({ id: l.id, label: l.word, enabled: all.some((s) => levelOf(s) === l.id) }));
+  }
+  /** 고른 난이도를 실제로 쓸 난이도로: 스타일이 없는(또는 모르는) 난이도면 스타일이 있는 첫 난이도 @param {string} level @returns {string} */
+  function effectiveLevel(level) {
+    const ch = levelChoices();
+    const own = ch.find((c) => c.id === level);
+    if (own && own.enabled) return level;
+    const first = ch.find((c) => c.enabled);
+    return first ? first.id : DEFAULT_LEVEL;
+  }
+  /**
+   * 난이도 안 스타일 목록에 보일 이름: label 의 '<단계> · ' 머리를 뗀 것('초보 · 충동형' → '충동형'). 머리가 없으면 label 그대로.
+   * 판의 seat-note 는 머리를 떼지 않은 label 을 그대로 쓴다.
+   * @param {{id:string, label:string, level?:string}} s @returns {string}
+   */
+  function shortStyleLabel(s) {
+    const label = String(s.label || s.id);
+    const lv = BOT_LEVELS.find((l) => l.id === levelOf(s));
+    if (!lv) return label;
+    const m = label.match(new RegExp('^\\s*' + lv.word + '\\s*[·・•]\\s*(.+)$'));
+    return m ? m[1].trim() : label;
+  }
+  /**
+   * 컴퓨터 자리 선택(난이도, 스타일)을 지금 등록된 스타일에 맞춘다: 난이도는 effectiveLevel, 스타일은 그 난이도에 있을 때만 그대로,
+   * 아니면 '무작위'(스타일 파일이 바뀌었거나 난이도가 바뀜).
+   * @param {string} level @param {string} style @returns {{level:string, style:string}}
+   */
+  function fixBotChoice(level, style) {
+    const lv = effectiveLevel(level);
+    return { level: lv, style: style !== RANDOM_STYLE && stylesOfLevel(lv).some((s) => s.id === style) ? style : RANDOM_STYLE };
+  }
+  /** @param {string} level @returns {Array<{id:string, label:string, level:string}>} 패널에 넘기는 그 난이도의 스타일(머리 뗀 이름) */
+  function styleChoices(level) {
+    return stylesOfLevel(level).map((s) => ({ id: s.id, label: shortStyleLabel(s), level: levelOf(s) }));
   }
   /**
    * 컴퓨터 자리의 이름 후보: 화면 담당이 직접 지은 흔한 한국 이름 40개(두 글자 32, 세 글자 8).
@@ -108,6 +161,8 @@
     localKinds: ['human', 'human', 'human', 'human'],
     /** 한 화면 설정: 컴퓨터 자리의 스타일 — 'random'(무작위, 기본값) 또는 Zap.bots.styles 의 id */
     localStyles: [RANDOM_STYLE, RANDOM_STYLE, RANDOM_STYLE, RANDOM_STYLE],
+    /** 한 화면 설정: 컴퓨터 자리의 난이도 — BOT_LEVELS 의 id(기본 'beginner'). 바꾸면 그 자리 스타일 선택은 '무작위'로 */
+    localLevels: [DEFAULT_LEVEL, DEFAULT_LEVEL, DEFAULT_LEVEL, DEFAULT_LEVEL],
     /**
      * 한 화면 세션: 자리마다 컴퓨터 상대의 실제 스타일 id, 사람 자리는 null (판을 열 때 정함 — '무작위'면 이때 뽑은 것, 판 중에는 바뀌지 않음).
      * 화면 어디에도 글자로 내지 않고(상대를 눌러 연 확대의 한 줄만), 시험은 이 값을 읽는다.
@@ -159,6 +214,8 @@
     toast: '',
     /** 서버 패널(대기실): 다음에 더할 컴퓨터의 스타일 선택 — 'random'(무작위, 기본값) 또는 Zap.bots.styles 의 id */
     hostBotStyle: RANDOM_STYLE,
+    /** 서버 패널(대기실): 다음에 더할 컴퓨터의 난이도(기본 'beginner'). 바꾸면 스타일 선택은 '무작위'로 */
+    hostBotLevel: DEFAULT_LEVEL,
     /** 서버 패널: 컴퓨터를 더하거나 빼지 못했을 때의 짧은 알림(컴퓨터 자리 칸 안) */
     botError: '',
   };
@@ -473,10 +530,16 @@
     });
   }
 
-  /** 설정의 스타일 선택을 실제 스타일 id 로: '무작위'(또는 목록에 없는 것)면 셋 가운데 하나를 뽑는다 @param {string} choice @returns {string} */
-  function resolveStyle(choice) {
-    const styles = botStyles();
-    if (choice !== RANDOM_STYLE && styles.some((s) => s.id === choice)) return choice;
+  /**
+   * 설정의 (난이도, 스타일) 선택을 실제 스타일 id 로: 그 난이도의 스타일을 골랐으면 그것, '무작위'(또는 목록에 없는 것)면
+   * 그 난이도(effectiveLevel) 안에서 하나를 뽑는다.
+   * @param {string} choice @param {string} level @returns {string}
+   */
+  function resolveStyle(choice, level) {
+    const c = fixBotChoice(level, choice);
+    if (c.style !== RANDOM_STYLE) return c.style;
+    const pool = stylesOfLevel(c.level);
+    const styles = pool.length ? pool : botStyles();
     return styles[Math.floor(Math.random() * styles.length)].id;
   }
 
@@ -563,9 +626,9 @@
       seen.add(key);
     }
     if (!localApi || !Zap.room) { S.formError = '한 화면 모드를 불러오지 못했습니다.'; render(); return; }
-    // 컴퓨터 자리의 실제 스타일: '무작위'면 이때 셋 가운데 하나를 뽑는다
+    // 컴퓨터 자리의 실제 스타일: '무작위'면 이때 그 자리 난이도 안에서 하나를 뽑는다
     /** @type {Array<string|null>} */
-    const botStyle = bots.map((b, i) => (b ? resolveStyle(S.localStyles[i]) : null));
+    const botStyle = bots.map((b, i) => (b ? resolveStyle(S.localStyles[i], S.localLevels[i]) : null));
     resetSession();
     const my = sessionNo;
     /** @type {any} */
@@ -736,7 +799,7 @@
     const room0 = host.snapshot().room;
     if (room0.status !== 'lobby') return;
     S.botError = '';
-    const style = resolveStyle(S.hostBotStyle);
+    const style = resolveStyle(S.hostBotStyle, S.hostBotLevel);
     /** @type {Set<string>} 이번에 시도했다가 name_taken 으로 거절된 이름 */
     const tried = new Set();
     /** @type {ClientConnection|null} */
@@ -982,13 +1045,12 @@
       names: info.names,
       paths: S.host && typeof S.host.paths === 'function' ? S.host.paths() : undefined,
       // 컴퓨터 자리 칸(대기실에서만 보인다. net 에 addBot 이 없는 연결 — 미리보기용 가짜 연결 등 — 이면 칸이 없다).
-      // 상대 모듈이 없으면 칸은 보이되 꺼진다. 고른 스타일이 목록에 없으면(스타일 파일이 바뀜) 무작위로
-      bots: S.host && typeof S.host.addBot === 'function' ? {
-        canUse: canHostBots(),
-        styles: botStyles().map((s) => ({ id: s.id, label: String(s.label || s.id) })),
-        style: botStyles().some((s) => s.id === S.hostBotStyle) ? S.hostBotStyle : RANDOM_STYLE,
-        error: S.botError,
-      } : undefined,
+      // 상대 모듈이 없으면 칸은 보이되 꺼진다. 고른 난이도·스타일이 목록에 없으면(스타일 파일이 바뀜) 맞춘다(fixBotChoice)
+      bots: S.host && typeof S.host.addBot === 'function' ? (() => {
+        const c = fixBotChoice(S.hostBotLevel, S.hostBotStyle);
+        S.hostBotLevel = c.level; S.hostBotStyle = c.style;
+        return { canUse: canHostBots(), levels: levelChoices(), level: c.level, styles: styleChoices(c.level), style: c.style, error: S.botError };
+      })() : undefined,
     }, {
       setFirst: (v) => { S.first = v; },
       start: () => admin({ action: 'start', first: firstChoice() }),
@@ -997,6 +1059,7 @@
       copy: copyLink,
       freshCode: reopenWithFreshCode,
       botStyle: (v) => { S.hostBotStyle = v || RANDOM_STYLE; S.botError = ''; render(); },
+      botLevel: (v) => { S.hostBotLevel = v || DEFAULT_LEVEL; S.hostBotStyle = RANDOM_STYLE; S.botError = ''; render(); },
       addBot: addOnlineBot,
       removeBot: removeOnlineBot,
     });
@@ -1173,12 +1236,18 @@
       }, { localOnly: LOCAL_ONLY, hasLocal: !!(localApi && Zap.room), skins: skinChoices(), skin: S.skin }));
     }
     if (S.screen === 'localSetup') {
-      const styles = botStyles();
       const canBots = canUseBots();
-      // 고른 스타일이 목록에 없으면(스타일 파일이 바뀜) 무작위로
-      for (let i = 0; i < 4; i++) if (S.localStyles[i] !== RANDOM_STYLE && !styles.some((s) => s.id === S.localStyles[i])) S.localStyles[i] = RANDOM_STYLE;
+      // 고른 난이도·스타일이 목록에 없으면(스타일 파일이 바뀜) 맞춘다: 난이도는 스타일이 있는 첫 난이도로, 스타일은 무작위로
+      for (let i = 0; i < 4; i++) {
+        const c = fixBotChoice(S.localLevels[i], S.localStyles[i]);
+        S.localLevels[i] = c.level; S.localStyles[i] = c.style;
+      }
+      /** @type {Record<string, Array<{id:string, label:string, level:string}>>} */
+      const byLevel = {};
+      for (const l of BOT_LEVELS) byLevel[l.id] = styleChoices(l.id);
       return h('div.app.app--front.' + skinCls, { 'data-key': 'app-front' }, panels.localSetup({
-        n: S.localN, names: S.localNames, kinds: S.localKinds, styleIds: S.localStyles, styles: styles.map((s) => ({ id: s.id, label: String(s.label || s.id) })),
+        n: S.localN, names: S.localNames, kinds: S.localKinds, styleIds: S.localStyles, levelIds: S.localLevels,
+        levels: levelChoices(), stylesByLevel: byLevel,
         shownNames: localSetupNames(), canBots,
         first: S.localFirst, curtain: S.localCurtain, error: S.formError,
       }, {
@@ -1187,6 +1256,7 @@
         nameDone: () => render(),
         kind: (i, v) => { S.localKinds[i] = v === 'bot' ? 'bot' : 'human'; S.formError = ''; render(); },
         style: (i, v) => { S.localStyles[i] = v || RANDOM_STYLE; render(); },
+        level: (i, v) => { S.localLevels[i] = v || DEFAULT_LEVEL; S.localStyles[i] = RANDOM_STYLE; render(); },
         first: (v) => { S.localFirst = v; },
         curtain: (v) => { S.localCurtain = v; render(); },
         start: openLocalSession,

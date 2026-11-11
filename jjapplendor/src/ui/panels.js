@@ -71,14 +71,48 @@
   }
 
   /**
-   * 한 화면에서 두기 설정. 자리마다 사람/컴퓨터를 고르고, 컴퓨터 자리는 이름 대신 스타일을 고른다(맨 위 '무작위'가 기본).
-   * 컴퓨터 자리의 이름은 판을 열 때 app 이 사람 이름 목록에서 뽑는다.
-   * @param {{n:number, names:string[], kinds:string[], styleIds:string[], styles:Array<{id:string, label:string}>, shownNames:string[], canBots:boolean,
+   * 컴퓨터 난이도 보기 하나: 등록된 스타일이 없는 난이도는 enabled:false(보기는 보이되 꺼져 고를 수 없음)
+   * @typedef {{id:string, label:string, enabled:boolean}} BotLevelChoice
+   */
+
+  /**
+   * 컴퓨터 난이도 선택(초보·중수·고수). 스타일이 없는 난이도는 꺼진 보기로 둔다.
+   * @param {{test:string, key?:string, label:string, disabled?:boolean, cls?:string}} a @param {BotLevelChoice[]} levels @param {string} cur
+   * @param {(v:string) => void} change
+   * @returns {HTMLElement}
+   */
+  function botLevelSelect(a, levels, cur, change) {
+    return h('select.input.input--select.input--level' + (a.cls || ''), {
+      test: a.test, 'data-key': a.key, 'aria-label': a.label, disabled: !!a.disabled,
+      onchange: (/** @type {Event} */ e) => change(/** @type {HTMLSelectElement} */ (e.target).value),
+    }, levels.map((l) => h('option', { value: l.id, selected: l.id === cur, disabled: !l.enabled }, l.label)));
+  }
+
+  /**
+   * 컴퓨터 스타일 선택: 맨 위 '무작위'(기본) 다음 그 난이도의 스타일(이름은 '<단계> · ' 머리를 뗀 것).
+   * @param {{test:string, key?:string, label:string, disabled?:boolean, cls?:string}} a @param {Array<{id:string, label:string}>} styles @param {string} cur
+   * @param {(v:string) => void} change
+   * @returns {HTMLElement}
+   */
+  function botStyleSelect(a, styles, cur, change) {
+    return h('select.input.input--select.input--style' + (a.cls || ''), {
+      test: a.test, 'data-key': a.key, 'aria-label': a.label, disabled: !!a.disabled,
+      onchange: (/** @type {Event} */ e) => change(/** @type {HTMLSelectElement} */ (e.target).value),
+    }, h('option', { value: 'random', selected: !styles.some((st) => st.id === cur) }, '무작위'),
+      styles.map((st) => h('option', { value: st.id, selected: st.id === cur }, st.label)));
+  }
+
+  /**
+   * 한 화면에서 두기 설정. 자리마다 사람/컴퓨터를 고르고, 컴퓨터 자리는 이름 대신 난이도(초보 기본)와 그 난이도 안의 스타일
+   * (맨 위 '무작위'가 기본)을 고른다. 컴퓨터 자리의 이름은 판을 열 때 app 이 사람 이름 목록에서 뽑는다.
+   * @param {{n:number, names:string[], kinds:string[], styleIds:string[], levelIds:string[], levels:BotLevelChoice[],
+   *   stylesByLevel:Record<string, Array<{id:string, label:string}>>, shownNames:string[], canBots:boolean,
    *   first:string, curtain:boolean, error:string}} s
-   *   names: 사람 자리에 적은 이름, kinds: 'human'|'bot', styleIds: 컴퓨터 자리의 선택('random' 또는 스타일 id),
+   *   names: 사람 자리에 적은 이름, kinds: 'human'|'bot', styleIds: 컴퓨터 자리의 스타일 선택('random' 또는 스타일 id),
+   *   levelIds: 컴퓨터 자리의 난이도, levels: 난이도 보기, stylesByLevel: 난이도마다 고를 수 있는 스타일(등록 순서, 머리 뗀 이름),
    *   shownNames: 선 플레이어 목록에 보일 이름(컴퓨터 자리는 '컴퓨터'), canBots: 컴퓨터 상대를 쓸 수 있는지
    * @param {{count:(n:number) => void, name:(i:number, v:string) => void, nameDone:() => void, kind:(i:number, v:string) => void, style:(i:number, v:string) => void,
-   *   first:(v:string) => void, curtain:(v:boolean) => void, start:() => void, back:() => void}} on
+   *   level:(i:number, v:string) => void, first:(v:string) => void, curtain:(v:boolean) => void, start:() => void, back:() => void}} on
    * @returns {HTMLElement}
    */
   function localSetup(s, on) {
@@ -94,12 +128,12 @@
       },
         h('option', { value: 'human', selected: !bot }, '사람'),
         h('option', { value: 'bot', selected: bot }, '컴퓨터')) : null;
+      const level = bot
+        ? botLevelSelect({ test: 'local-level-' + i, key: 'level-' + i, label: (i + 1) + '번 자리 컴퓨터 난이도' }, s.levels, s.levelIds[i], (v) => on.level(i, v))
+        : null;
       const main = bot
-        ? h('select.input.input--select.input--style', {
-          test: 'local-style-' + i, 'data-key': 'style-' + i, 'aria-label': (i + 1) + '번 자리 컴퓨터 스타일',
-          onchange: (/** @type {Event} */ e) => on.style(i, /** @type {HTMLSelectElement} */ (e.target).value),
-        }, h('option', { value: 'random', selected: !s.styles.some((st) => st.id === s.styleIds[i]) }, '무작위'),
-          s.styles.map((st) => h('option', { value: st.id, selected: st.id === s.styleIds[i] }, st.label)))
+        ? botStyleSelect({ test: 'local-style-' + i, key: 'style-' + i, label: (i + 1) + '번 자리 컴퓨터 스타일' },
+          s.stylesByLevel[s.levelIds[i]] || [], s.styleIds[i], (v) => on.style(i, v))
         : h('input.input.input--seatname', {
           type: 'text', test: 'local-name-' + i, 'data-key': 'name-' + i, maxlength: 24, autocomplete: 'off', placeholder: '1~12자', value: s.names[i], 'aria-label': (i + 1) + '번 자리 이름',
           oninput: (/** @type {Event} */ e) => on.name(i, /** @type {HTMLInputElement} */ (e.target).value),
@@ -107,7 +141,7 @@
         });
       // 고를 것이 이름 칸 하나뿐이면(컴퓨터 상대를 못 쓰는 경우) 예전처럼 줄 전체가 이름 칸의 label
       seats.push(h((s.canBots ? 'div' : 'label') + '.field.field--seat', { 'data-key': 'seat-' + i, class: bot ? 'is-bot' : '' },
-        h('span.plist__no', null, String(i + 1)), kind, main));
+        h('span.plist__no', null, String(i + 1)), kind, level, main));
     }
     const firstOpts = [h('option', { value: 'random', selected: s.first === 'random' }, '무작위')];
     for (let i = 0; i < s.n; i++) {
@@ -464,16 +498,17 @@
   /* ───────────── 서버 패널 ───────────── */
 
   /**
-   * @typedef {{canUse:boolean, styles:Array<{id:string, label:string}>, style:string, error:string}} HostBotsState
-   *   canUse: 상대 모듈과 net 의 addBot 이 있는지, styles: 고를 수 있는 스타일(등록 순서), style: 지금 고른 것('random' 또는 id),
+   * @typedef {{canUse:boolean, levels:BotLevelChoice[], level:string, styles:Array<{id:string, label:string}>, style:string, error:string}} HostBotsState
+   *   canUse: 상대 모듈과 net 의 addBot 이 있는지, levels: 난이도 보기(스타일 없는 난이도는 꺼짐), level: 고른 난이도,
+   *   styles: 그 난이도의 스타일(등록 순서, 머리 뗀 이름), style: 지금 고른 것('random' 또는 id),
    *   error: 더하거나 빼지 못했을 때의 짧은 알림
    */
 
   /**
-   * (서버 패널, 대기실) 컴퓨터 자리 칸: 스타일 고르기('무작위' 기본) + [컴퓨터 추가] + 안내 한 줄.
+   * (서버 패널, 대기실) 컴퓨터 자리 칸: 난이도(초보 기본) + 그 난이도 안의 스타일('무작위' 기본) + [컴퓨터 추가] + 안내 한 줄.
    * 방이 가득 찼거나 컴퓨터 상대를 쓸 수 없으면 끈다. 더한 컴퓨터의 스타일은 여기에도 참가자 목록에도 쓰지 않는다.
    * @param {RoomInfo} room @param {HostBotsState} b
-   * @param {{style:(v:string) => void, add:() => void}} on
+   * @param {{style:(v:string) => void, level:(v:string) => void, add:() => void}} on
    * @returns {HTMLElement}
    */
   function hostBots(room, b, on) {
@@ -482,11 +517,8 @@
     return h('div.botbox', { test: 'host-bots', 'data-key': 'host-bots' },
       h('span.hostpanel__label', null, '컴퓨터 자리'),
       h('div.botbox__row', null,
-        h('select.input.input--select.botbox__style', {
-          test: 'host-bot-style', 'aria-label': '더할 컴퓨터의 스타일', disabled: off,
-          onchange: (/** @type {Event} */ e) => on.style(/** @type {HTMLSelectElement} */ (e.target).value),
-        }, h('option', { value: 'random', selected: !b.styles.some((st) => st.id === b.style) }, '무작위'),
-          b.styles.map((st) => h('option', { value: st.id, selected: st.id === b.style }, st.label))),
+        botLevelSelect({ test: 'host-bot-level', label: '더할 컴퓨터의 난이도', disabled: off, cls: '.botbox__level' }, b.levels, b.level, on.level),
+        botStyleSelect({ test: 'host-bot-style', label: '더할 컴퓨터의 스타일', disabled: off, cls: '.botbox__style' }, b.styles, b.style, on.style),
         h('button.btn', { type: 'button', test: 'host-bot-add', disabled: off, onclick: on.add }, '컴퓨터 추가')),
       !b.canUse ? h('p.note.note--warn', { test: 'host-bot-off' }, '컴퓨터 상대를 불러오지 못해 더할 수 없습니다.')
         : full ? h('p.note', { test: 'host-bot-full' }, '방이 가득 차서 더 앉힐 수 없습니다.') : null,
@@ -499,7 +531,7 @@
    * @param {{room:RoomInfo, view:PlayerView|null, joinUrl:string, status:ConnStatus, first:string, copied:boolean, hostPlays:boolean, names:string[], paths?:Record<string, ConnPath>,
    *   bots?:HostBotsState}} s  bots: 있으면 대기실에서 컴퓨터 자리 칸을 보인다
    * @param {{setFirst:(v:string) => void, start:() => void, transfer:(name:string) => void, remove:(name:string) => void, copy:() => void, freshCode:() => void,
-   *   botStyle?:(v:string) => void, addBot?:() => void, removeBot?:(name:string) => void}} on
+   *   botStyle?:(v:string) => void, botLevel?:(v:string) => void, addBot?:() => void, removeBot?:(name:string) => void}} on
    * @returns {HTMLElement}
    */
   function hostPanel(s, on) {
@@ -509,7 +541,10 @@
     let botBox = null;
     if (room.status === 'lobby') {
       stateBox = startControls(room, { first: s.first, label: '판 시작', test: 'start', setFirst: on.setFirst, go: on.start });
-      if (s.bots && on.addBot && on.botStyle) botBox = hostBots(room, s.bots, { style: on.botStyle, add: on.addBot });
+      if (s.bots && on.addBot && on.botStyle) {
+        const noop = () => {};
+        botBox = hostBots(room, s.bots, { style: on.botStyle, level: on.botLevel || noop, add: on.addBot });
+      }
     } else if (room.status === 'over') {
       stateBox = h('p.hostpanel__state', { test: 'host-game-state' }, '판이 끝났습니다. 결과 화면의 [새 판]으로 같은 자리 그대로 새 판을 엽니다.');
     } else {

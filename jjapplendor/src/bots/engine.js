@@ -6,7 +6,7 @@
  * (game/src/bots/styles/*.js)이 Zap.bots.register 로 넘기는 순수 데이터가 정한다. 이 파일은 그 데이터를 읽어 수를 고른다.
  *
  * 공개 형식(docs/ai/code-notes.md 4절, 담당 사이의 약속):
- *   Zap.bots.styles                         // Array<{id, label, level:'beginner', desc}> 등록 순서대로 (desc: 값 파일의 한 줄 설명, 없으면 '')
+ *   Zap.bots.styles                         // Array<{id, label, level:'beginner'|'intermediate'|'expert', desc}> 등록 순서대로 (desc: 값 파일의 한 줄 설명, 없으면 '')
  *   Zap.bots.register(def)                  // 스타일 파일이 부른다. 틀 5.4 끝의 검사에 걸리면 등록하지 않고 Error 를 던진다.
  *                                           // 같은 id 를 다시 register 하면 그 자리를 바꾼다
  *   Zap.bots.attach(client, styleId, opts)  // → {stop()}. client 는 handle.clients[i] 하나만.
@@ -33,28 +33,32 @@
   /* ───────────── 값 파일의 형식 (framework.md 5.4) ───────────── */
 
   /** @typedef {'t1'|'t2'|'t3'|'reserved'} BotSource */
-  /** @typedef {'points'|'payment'|'printedCost'|'need'|'reach'|'bonusLow'|'watchedNoble'|'nobleColor'|'tierLow'|'lastTarget'|'hasPoints'|'reading'|'gaze'|'random'} BotKey */
-  /** @typedef {'free'|'hasPoints'|'climbForEmpty'|'pileOk'} BotFilter */
-  /** @typedef {{from:BotSource[], accept?:'ok'|'exempt'|'any', filter?:BotFilter[], window?:number, keys:BotKey[]}} BotStage */
+  /** @typedef {'points'|'payment'|'printedCost'|'need'|'reach'|'bonusLow'|'watchedNoble'|'nobleColor'|'tierLow'|'lastTarget'|'hasPoints'|'reading'|'gaze'|'random'
+   *   |'plan'|'costColors'|'needPileMin'|'payCount'|'slotLeft'} BotKey */
+  /** @typedef {'free'|'hasPoints'|'climbForEmpty'|'pileOk'|'plan'|'notPlan'|'noPlanOverlap'|'payAvoidsPlan'|'fresh'|'beatsPlan'} BotFilter */
+  /** @typedef {{from:BotSource[], accept?:'ok'|'exempt'|'any', filter?:BotFilter[], window?:number, keys:BotKey[], pointsMin?:number, pointsMax?:number}} BotStage */
   /** @typedef {{stages:BotStage[]}} BotPick */
   /** @typedef {{kind:'colorLead', lead:number, exemptFree:boolean} | {kind:'goldPay'}} BotAvoid */
   /** @typedef {{tokensMin?:number, tokensMax?:number, roomToTake?:boolean, supplyNoGems?:boolean, supplyGold?:boolean, finalRound?:boolean,
    *   swappedLastTurn?:boolean, afterReserve?:boolean, snatched?:boolean, reservedMax?:number, holdsGold?:boolean,
-   *   bonusMin?:number, bonusMax?:number, litMin?:number}} BotCond */
-  /** @typedef {{do:'buy'|'freeGrab'|'lastFlush'|'reserveOneShort'|'reserveWish'|'reserveForced'|'take', name?:string, when?:BotCond, p?:number,
-   *   gate?:'always'|'noRoom', pick?:string, lift?:('colorLead'|'goldPay')[], target?:string, fallback?:'leftT1'|'any'|'none'}} BotActRule */
-  /** @typedef {{name:string, when?:BotCond, target:string|null, pair:'none'|'needTwo'|'oneColor'|'toTen', fill:('pileHigh'|'heldLow')[]}} BotTakeMode */
-  /** @typedef {{keepGold:boolean, protect:('targetMissing'|'targetCost'|'justTaken')[], order:('heldHigh'|'bonusHigh')[]}} BotReturn */
+   *   bonusMin?:number, bonusMax?:number, litMin?:number,
+   *   hasPlan?:boolean, planOnBoard?:boolean, planFresh?:boolean, planNeedMin?:number, planNeedMax?:number,
+   *   planIdleMin?:number, planPileEmpty?:boolean, litScoringBoard?:boolean}} BotCond */
+  /** @typedef {{do:'buy'|'freeGrab'|'lastFlush'|'reserveOneShort'|'reserveWish'|'reserveForced'|'take'|'plan'|'planDrop'|'reservePlan', name?:string, when?:BotCond, p?:number,
+   *   gate?:'always'|'noRoom', pick?:string, lift?:('colorLead'|'goldPay')[], target?:string, fallback?:'leftT1'|'any'|'none', replace?:boolean, tag?:string}} BotActRule */
+  /** @typedef {{name:string, when?:BotCond, target:string|null, pair:'none'|'needTwo'|'oneColor'|'toTen'|'topTwo', fill:('pileHigh'|'heldLow'|'next'|'targetSpare')[],
+   *   nextTarget?:string, nextCount?:number, missingTie?:'color'|'pileHigh'}} BotTakeMode */
+  /** @typedef {{keepGold:boolean, protect:('targetMissing'|'targetCost'|'justTaken'|'targetUpTo')[], order:('heldHigh'|'bonusHigh')[]}} BotReturn */
   /** @typedef {{look:('fanfareAny'|'fanfareOthers'|'finalTurn'|'milestone'|'watched'|'always')[], watchWithin?:number}} BotNoble */
-  /** @typedef {{id:'nobleMiss'|'dropBonus'|'dropGold'|'firstGlance'|'rowSkip'|'pileUnder4Blocked', p:number, when?:BotCond,
-   *   tiers?:Tier[], rows?:BotSource[], colorScope?:'wantedPair'|'any'}} BotMistake */
-  /** @typedef {{swapFrom:number, swapStreakMax:number, noBuyStreakMax:number, longGameRounds:number, pick:string, target:string}} BotSafety */
-  /** @typedef {{target:{bonus:boolean, gold:boolean}, held:{bonus:boolean}}} BotPerception */
+  /** @typedef {{id:'nobleMiss'|'dropBonus'|'dropGold'|'firstGlance'|'rowSkip'|'pileUnder4Blocked'|'pileLowAsEmpty'|'scanStop'|'chipMiscount', p:number, when?:BotCond,
+   *   tiers?:Tier[], rows?:BotSource[], colorScope?:'wantedPair'|'any', bonusScope?:'all'|'single', exceptPlan?:boolean, stopAt?:number, minColors?:number}} BotMistake */
+  /** @typedef {{swapFrom:number, swapStreakMax:number, noBuyStreakMax:number, longGameRounds:number, pick:string, target:string, noBuyResets?:('buy'|'reserve')[]}} BotSafety */
+  /** @typedef {{target:{bonus:boolean, gold:boolean|'total'}, held:{bonus:boolean}}} BotPerception */
   /**
    * @typedef {Object} BotStyle
    * @property {string} id
    * @property {string} label
-   * @property {'beginner'} level
+   * @property {'beginner'|'intermediate'|'expert'} level
    * @property {string} [desc]   화면이 상대를 눌렀을 때 보이는 한 줄 설명(실행부는 쓰지 않음)
    * @property {string} [temper]
    * @property {string} [seatName]
@@ -85,22 +89,28 @@
   /* ───────────── 고정 목록 (framework.md 5.3) ───────────── */
 
   const SOURCES = ['t1', 't2', 't3', 'reserved'];
-  const KEYS = ['points', 'payment', 'printedCost', 'need', 'reach', 'bonusLow', 'watchedNoble', 'nobleColor', 'tierLow', 'lastTarget', 'hasPoints', 'reading', 'gaze', 'random'];
-  const FILTERS = ['free', 'hasPoints', 'climbForEmpty', 'pileOk'];
+  const KEYS = ['points', 'payment', 'printedCost', 'need', 'reach', 'bonusLow', 'watchedNoble', 'nobleColor', 'tierLow', 'lastTarget', 'hasPoints', 'reading', 'gaze', 'random',
+    'plan', 'costColors', 'needPileMin', 'payCount', 'slotLeft'];
+  const FILTERS = ['free', 'hasPoints', 'climbForEmpty', 'pileOk', 'plan', 'notPlan', 'noPlanOverlap', 'payAvoidsPlan', 'fresh', 'beatsPlan'];
   const ACCEPTS = ['ok', 'exempt', 'any'];
-  const ACT_DO = ['buy', 'freeGrab', 'lastFlush', 'reserveOneShort', 'reserveWish', 'reserveForced', 'take'];
+  const ACT_DO = ['buy', 'freeGrab', 'lastFlush', 'reserveOneShort', 'reserveWish', 'reserveForced', 'take', 'plan', 'planDrop', 'reservePlan'];
   const GATES = ['always', 'noRoom'];
   const LIFTS = ['colorLead', 'goldPay'];
   const FALLBACKS = ['leftT1', 'any', 'none'];
-  const PAIRS = ['none', 'needTwo', 'oneColor', 'toTen'];
-  const FILLS = ['pileHigh', 'heldLow'];
-  const PROTECTS = ['targetMissing', 'targetCost', 'justTaken'];
+  const PAIRS = ['none', 'needTwo', 'oneColor', 'toTen', 'topTwo'];
+  const FILLS = ['pileHigh', 'heldLow', 'next', 'targetSpare'];
+  const PROTECTS = ['targetMissing', 'targetCost', 'justTaken', 'targetUpTo'];
   const ORDERS = ['heldHigh', 'bonusHigh'];
   const LOOKS = ['fanfareAny', 'fanfareOthers', 'finalTurn', 'milestone', 'watched', 'always'];
-  const MISTAKE_IDS = ['nobleMiss', 'dropBonus', 'dropGold', 'firstGlance', 'rowSkip', 'pileUnder4Blocked'];
+  const MISTAKE_IDS = ['nobleMiss', 'dropBonus', 'dropGold', 'firstGlance', 'rowSkip', 'pileUnder4Blocked', 'pileLowAsEmpty', 'scanStop', 'chipMiscount'];
   const SCOPES = ['wantedPair', 'any'];
-  const COND_NUM = ['tokensMin', 'tokensMax', 'reservedMax', 'bonusMin', 'bonusMax', 'litMin'];
-  const COND_BOOL = ['roomToTake', 'supplyNoGems', 'supplyGold', 'finalRound', 'swappedLastTurn', 'afterReserve', 'snatched', 'holdsGold'];
+  /** 기존 조건 칸(D1 시작의 문맥으로 판정)과 11-11 의 새 칸(판정하는 순간의 기억으로, framework 12.4) */
+  const COND_NUM = ['tokensMin', 'tokensMax', 'reservedMax', 'bonusMin', 'bonusMax', 'litMin', 'planNeedMin', 'planNeedMax', 'planIdleMin'];
+  const COND_BOOL = ['roomToTake', 'supplyNoGems', 'supplyGold', 'finalRound', 'swappedLastTurn', 'afterReserve', 'snatched', 'holdsGold',
+    'hasPlan', 'planOnBoard', 'planFresh', 'planPileEmpty', 'litScoringBoard'];
+  const MISSING_TIES = ['color', 'pileHigh'];
+  const BONUS_SCOPES = ['all', 'single'];
+  const NOBUY_RESETS = ['buy', 'reserve'];
   /** D3 에서 귀족 줄 전체를 보게 하는 계기 */
   const LOOK_ALL = ['fanfareAny', 'fanfareOthers', 'finalTurn', 'milestone', 'always'];
   const TOKEN_KEYS = ['w', 'u', 'g', 'r', 'k', 'gold'];
@@ -125,7 +135,7 @@
     ret: { keepGold: true, protect: ['targetMissing'], order: ['heldHigh'] },
     noble: { look: ['always'] },
     mistakes: [],
-    safety: { swapFrom: 10, swapStreakMax: 3, noBuyStreakMax: 12, longGameRounds: 60, pick: 'main', target: 'main' },
+    safety: { swapFrom: 10, swapStreakMax: 3, noBuyStreakMax: 12, longGameRounds: 60, pick: 'main', target: 'main', noBuyResets: ['buy'] },
   };
 
   /* ───────────── 작은 도구 ───────────── */
@@ -204,6 +214,10 @@
         if (st.accept !== undefined && ACCEPTS.indexOf(st.accept) < 0) errs.push(sat + '.accept: 모르는 값 ' + st.accept);
         if (st.filter !== undefined) checkList(st.filter, FILTERS, sat + '.filter', errs);
         if (st.window !== undefined && !(isNum(st.window) && st.window >= 0)) errs.push(sat + '.window: 0 이상의 수여야 합니다');
+        for (const k of ['pointsMin', 'pointsMax']) {
+          if (st[k] !== undefined && !(Number.isInteger(st[k]) && st[k] >= 0 && st[k] <= 5)) errs.push(sat + '.' + k + ': 0~5 의 정수여야 합니다');
+        }
+        if (isNum(st.pointsMin) && isNum(st.pointsMax) && st.pointsMin > st.pointsMax) errs.push(sat + ': pointsMin ≤ pointsMax 여야 합니다');
         checkList(st.keys, KEYS, sat + '.keys', errs);
       });
     }
@@ -216,15 +230,16 @@
     const errs = [];
     if (typeof s.id !== 'string' || !s.id) errs.push('id: 빈 문자열이 아닌 문자열이어야 합니다');
     if (typeof s.label !== 'string' || !s.label) errs.push('label: 빈 문자열이 아닌 문자열이어야 합니다');
-    if (s.level !== 'beginner') errs.push("level: 'beginner' 여야 합니다");
+    if (s.level !== 'beginner' && s.level !== 'intermediate' && s.level !== 'expert') errs.push("level: 'beginner'·'intermediate'·'expert' 중 하나여야 합니다");
     if (typeof s.temper !== 'string') errs.push('temper: 문자열이어야 합니다');
     if (typeof s.seatName !== 'string' || s.seatName.length < 1 || s.seatName.length > 12) errs.push('seatName: 1~12자여야 합니다');
     if (!isObj(s.pulls)) errs.push('pulls: 객체여야 합니다');
     if (!Array.isArray(s.shapes)) errs.push('shapes: 배열이어야 합니다');
     if (!isObj(s.roles)) errs.push('roles: 객체여야 합니다');
     const pc = s.perception;
-    if (!isObj(pc) || !isObj(pc.target) || !isObj(pc.held) || typeof pc.target.bonus !== 'boolean' || typeof pc.target.gold !== 'boolean' || typeof pc.held.bonus !== 'boolean') {
-      errs.push('perception: {target:{bonus,gold}, held:{bonus}} (참/거짓) 여야 합니다');
+    if (!isObj(pc) || !isObj(pc.target) || !isObj(pc.held) || typeof pc.target.bonus !== 'boolean'
+      || (typeof pc.target.gold !== 'boolean' && pc.target.gold !== 'total') || typeof pc.held.bonus !== 'boolean') {
+      errs.push("perception: {target:{bonus, gold}, held:{bonus}} (참/거짓, gold 는 'total' 도 됨) 여야 합니다");
     }
     if (!Array.isArray(s.avoid)) errs.push('avoid: 배열이어야 합니다');
     else s.avoid.forEach(function (/** @type {any} */ a, /** @type {number} */ i) {
@@ -249,9 +264,11 @@
       if (r.do === 'buy' || r.do === 'freeGrab' || r.do === 'lastFlush') {
         if (typeof r.pick !== 'string' || !picks[r.pick]) errs.push(at + '.pick: picks 에 없는 이름 ' + r.pick);
       }
-      if (r.do === 'reserveOneShort' || r.do === 'reserveWish' || r.do === 'reserveForced') {
+      if (r.do === 'reserveOneShort' || r.do === 'reserveWish' || r.do === 'reserveForced' || r.do === 'plan') {
         if (typeof r.target !== 'string' || !targets[r.target]) errs.push(at + '.target: targets 에 없는 이름 ' + r.target);
       }
+      if (r.replace !== undefined && typeof r.replace !== 'boolean') errs.push(at + '.replace: 참/거짓이어야 합니다');
+      if (r.tag !== undefined && (typeof r.tag !== 'string' || !r.tag)) errs.push(at + '.tag: 빈 문자열이 아닌 문자열이어야 합니다');
     });
     if (!Array.isArray(s.take)) errs.push('take: 배열이어야 합니다');
     else s.take.forEach(function (/** @type {any} */ m, /** @type {number} */ i) {
@@ -261,6 +278,18 @@
       if (m.target !== null && (typeof m.target !== 'string' || !targets[m.target])) errs.push(at + '.target: targets 에 없는 이름 ' + m.target);
       if (PAIRS.indexOf(m.pair) < 0) errs.push(at + '.pair: 모르는 값 ' + m.pair);
       checkList(m.fill, FILLS, at + '.fill', errs);
+      if (m.nextTarget !== undefined && (typeof m.nextTarget !== 'string' || !targets[m.nextTarget])) errs.push(at + '.nextTarget: targets 에 없는 이름 ' + m.nextTarget);
+      if (m.nextCount !== undefined && !(Number.isInteger(m.nextCount) && m.nextCount >= 1)) errs.push(at + '.nextCount: 1 이상의 정수여야 합니다');
+      if (m.missingTie !== undefined && MISSING_TIES.indexOf(m.missingTie) < 0) errs.push(at + '.missingTie: 모르는 값 ' + m.missingTie);
+      if (Array.isArray(m.fill) && m.fill.indexOf('next') >= 0) {
+        // 다음 목표 계산은 rng 를 부르지 않아야 한다(framework 12.2)
+        const nt = m.nextTarget !== undefined ? m.nextTarget : m.target;
+        const spec = typeof nt === 'string' ? targets[nt] : null;
+        if (!spec) errs.push(at + ".fill: 'next' 에는 nextTarget(또는 target)이 targets 의 이름이어야 합니다");
+        else if (isObj(spec) && Array.isArray(spec.stages) && spec.stages.some(function (/** @type {any} */ st) { return isObj(st) && Array.isArray(st.keys) && st.keys.indexOf('random') >= 0; })) {
+          errs.push(at + ".fill: 'next' 가 쓰는 targets." + nt + " 에 random 키가 있으면 안 됩니다");
+        }
+      }
     });
     const ret = s.ret;
     if (!isObj(ret) || typeof ret.keepGold !== 'boolean') errs.push('ret: {keepGold, protect, order} 여야 합니다');
@@ -283,6 +312,13 @@
       if (m.id === 'rowSkip') checkList(m.rows, SOURCES, at + '.rows', errs, true);
       else if (m.rows !== undefined) checkList(m.rows, SOURCES, at + '.rows', errs);
       if (m.colorScope !== undefined && SCOPES.indexOf(m.colorScope) < 0) errs.push(at + '.colorScope: 모르는 값 ' + m.colorScope);
+      if (m.id === 'scanStop') {
+        checkList(m.rows, SOURCES, at + '.rows', errs, true);
+        if (!(isNum(m.stopAt) && m.stopAt >= 0)) errs.push(at + '.stopAt: 0 이상의 수여야 합니다');
+      }
+      if (m.bonusScope !== undefined && (m.id !== 'dropBonus' || BONUS_SCOPES.indexOf(m.bonusScope) < 0)) errs.push(at + '.bonusScope: dropBonus 의 all·single 만 됩니다');
+      if (m.exceptPlan !== undefined && (m.id !== 'rowSkip' || typeof m.exceptPlan !== 'boolean')) errs.push(at + '.exceptPlan: rowSkip 의 참/거짓만 됩니다');
+      if (m.minColors !== undefined && (m.id !== 'chipMiscount' || !(Number.isInteger(m.minColors) && m.minColors >= 1 && m.minColors <= 5))) errs.push(at + '.minColors: chipMiscount 의 1~5 정수만 됩니다');
     });
     const sf = s.safety;
     if (!isObj(sf)) errs.push('safety: 객체여야 합니다');
@@ -290,13 +326,15 @@
       for (const k of ['swapFrom', 'swapStreakMax', 'noBuyStreakMax', 'longGameRounds']) if (!isNum(sf[k])) errs.push('safety.' + k + ': 수여야 합니다');
       if (typeof sf.pick !== 'string' || !picks[sf.pick]) errs.push('safety.pick: picks 에 없는 이름 ' + sf.pick);
       if (typeof sf.target !== 'string' || !targets[sf.target]) errs.push('safety.target: targets 에 없는 이름 ' + sf.target);
+      if (!Array.isArray(sf.noBuyResets) || sf.noBuyResets.indexOf('buy') < 0) errs.push("safety.noBuyResets: 'buy' 를 포함한 배열이어야 합니다");
+      else checkList(sf.noBuyResets, NOBUY_RESETS, 'safety.noBuyResets', errs);
     }
     return errs;
   }
 
   /* ───────────── 등록 ───────────── */
 
-  /** @type {Array<{id:string, label:string, level:'beginner', desc:string}>} 화면이 보는 목록(등록 순서, 같은 배열을 제자리에서 고친다) */
+  /** @type {Array<{id:string, label:string, level:'beginner'|'intermediate'|'expert', desc:string}>} 화면이 보는 목록(등록 순서, 같은 배열을 제자리에서 고친다) */
   const styles = [];
   /** @type {Record<string, any>} id → 기본값을 채우고 얼린 정의 */
   const defs = {};
@@ -309,10 +347,12 @@
     const s = clone(def);
     for (const k of Object.keys(DEFAULTS)) if (s[k] === undefined) s[k] = clone(/** @type {any} */ (DEFAULTS)[k]);
     if (s.seatName === undefined) s.seatName = s.label;
+    // safety 안의 새 칸 하나는 따로 채운다(framework 12.1)
+    if (isObj(s.safety) && s.safety.noBuyResets === undefined) s.safety.noBuyResets = ['buy'];
     const errs = validate(s);
     if (errs.length) throw new Error('Zap.bots.register(' + String(s.id) + '): ' + errs.join(' / '));
     defs[s.id] = deepFreeze(s);
-    const info = { id: /** @type {string} */ (s.id), label: /** @type {string} */ (s.label), level: /** @type {'beginner'} */ ('beginner'), desc: typeof s.desc === 'string' ? s.desc : '' };
+    const info = { id: /** @type {string} */ (s.id), label: /** @type {string} */ (s.label), level: /** @type {'beginner'|'intermediate'|'expert'} */ (s.level), desc: typeof s.desc === 'string' ? s.desc : '' };
     for (let i = 0; i < styles.length; i++) {
       if (styles[i].id === s.id) { styles[i] = info; return; }
     }
@@ -348,6 +388,12 @@
         watched: null,
         /** @type {any} 이번 차례 기록 */
         turn: null,
+        /** 차례를 넘는 겨눈 카드(11-11, framework 11.4) @type {{cardId:string, setTurn:number, idle:number, onBoard:boolean}|null} */
+        plan: null,
+        /** 내 지난 차례 시작 / 이번 차례 시작 때 공개 줄의 카드 id @type {string[]|null} */
+        boardPrev: null,
+        /** @type {string[]|null} */
+        boardNow: null,
       };
     }
     let mem = fresh();
@@ -444,6 +490,7 @@
         reservedCount: me.reserved.length,
         holdsGold: me.tokens.gold > 0,
         lit: buys.length,
+        litScoringBoard: buys.some(function (b) { return b.source !== 'reserved' && b.card.points >= 1; }),
       };
     }
     /** @typedef {ReturnType<typeof ctxOf>} Ctx */
@@ -465,7 +512,63 @@
       if (w.bonusMin !== undefined && !(ctx.bonusTotal >= w.bonusMin)) return false;
       if (w.bonusMax !== undefined && !(ctx.bonusTotal <= w.bonusMax)) return false;
       if (w.litMin !== undefined && !(ctx.lit >= w.litMin)) return false;
+      // 11-11 의 새 칸: 판정하는 순간의 기억으로(framework 12.4). rng 를 부르지 않는다(needOf 의 첫 부름이면 기존 굴림 자리일 뿐)
+      if (w.hasPlan !== undefined && (mem.plan !== null) !== w.hasPlan) return false;
+      if (w.planOnBoard !== undefined && (!!mem.plan && onBoard(ctx.v, mem.plan.cardId)) !== w.planOnBoard) return false;
+      if (w.planFresh !== undefined && (!!mem.plan && mem.plan.setTurn === mem.turn.id) !== w.planFresh) return false;
+      if (w.planNeedMin !== undefined && !(mem.plan && needOf(planCard(), ctx).total >= w.planNeedMin)) return false;
+      if (w.planNeedMax !== undefined && !(mem.plan && needOf(planCard(), ctx).total <= w.planNeedMax)) return false;
+      if (w.planIdleMin !== undefined && !(mem.plan && mem.plan.idle >= w.planIdleMin)) return false;
+      if (w.litScoringBoard !== undefined && ctx.litScoringBoard !== w.litScoringBoard) return false;
+      if (w.planPileEmpty !== undefined && planPileEmpty(ctx) !== w.planPileEmpty) return false;
       return true;
+    }
+
+    /* ── 겨눈 카드(plan, 11-11) ── */
+    /** @returns {CardDef} 겨눈 카드(mem.plan 이 있을 때만 부른다) */
+    function planCard() { return cardOf(/** @type {any} */ (mem.plan).cardId); }
+    /** @param {BotCand} x */
+    function isPlan(x) { return !!mem.plan && x.card.id === mem.plan.cardId; }
+    /** 겨눈 카드의 모자란 색에 바닥난 색(또는 이번 차례 바닥으로 본 색)이 있는가 @param {Ctx} ctx */
+    function planPileEmpty(ctx) {
+      if (!mem.plan) return false;
+      const seen = mem.turn.seenEmpty || [];
+      return needOf(planCard(), ctx).missing.some(function (c) { return ctx.v.supply[c] === 0 || seen.indexOf(c) >= 0; });
+    }
+    /** @param {CardDef} card */
+    function costColorsOf(card) { let n = 0; for (const c of C) if (card.cost[c] > 0) n++; return n; }
+    /** 보너스가 비용보다 많은 색의 넘는 만큼(chipMiscount 가 다른 색에서 깎는 수) @param {CardDef} card @param {PlayerPublicView} me */
+    function excess(card, me) {
+      let e = 0;
+      for (const c of C) if (card.cost[c] > 0) e += Math.max(0, (S.perception.target.bonus ? me.bonuses[c] : 0) - card.cost[c]);
+      return e;
+    }
+    /** @param {CardDef} card @param {PlayerPublicView} me */
+    function miscountOn(card, me) { const T = mem.turn; return !!T.miscount && costColorsOf(card) >= (T.miscountMin || 3) && excess(card, me) > 0; }
+    /** 지각에 쓰는 그 색 보너스(dropBonus 의 tiers·bonusScope 반영) @param {CardDef} card @param {Color} c @param {PlayerPublicView} me */
+    function bonusUsed(card, c, me) {
+      if (!S.perception.target.bonus) return 0;
+      const P = mem.turn.percept;
+      if (P && P.bonus && P.bonus.indexOf(card.tier) >= 0 && (P.bonusScope !== 'single' || me.bonuses[c] === 1)) return 0;
+      return me.bonuses[c];
+    }
+    /** by 에서 n 개를, 그때 가장 큰 색(같으면 색 순서)부터 한 개씩 뺀다 @param {Record<string, number>} by @param {number} n */
+    function shave(by, n) {
+      while (n-- > 0) {
+        /** @type {Color|null} */
+        let best = null;
+        for (const c of C) if (by[c] > 0 && (best === null || by[c] > by[best])) best = c;
+        if (best === null) break;
+        by[best]--;
+      }
+    }
+    /** 낼 개수(지각된 지불, framework 12.3) @param {CardDef} card @param {Ctx} ctx */
+    function payCount(card, ctx) {
+      // 굴림은 하지 않는다(dropBonus·dropGold 의 자리는 첫 needOf). 이미 굴렸으면 그 결과(bonusUsed)를 쓴다
+      let t = 0;
+      for (const c of C) t += Math.max(0, card.cost[c] - bonusUsed(card, c, ctx.me));
+      if (miscountOn(card, ctx.me)) t -= excess(card, ctx.me);
+      return Math.max(0, t);
     }
 
     /* ── 굴림 실수 (3.1) ── */
@@ -485,40 +588,43 @@
     }
 
     /* ── 지각 셈 (7절 needOf) ── */
+    /** 이번 차례 처음 지각 셈을 할 때 한 번 굴린다 (dropBonus·dropGold, 기존 자리) @param {Ctx} ctx */
+    function ensurePercept(ctx) {
+      const T = mem.turn;
+      if (T.percept) return;
+      const me = ctx.me;
+      // 결과는 그 실수가 걸리는 단계 목록(항목의 tiers, 기본 전체). 틀 7절: 그 카드의 단계가 tiers 에 들 때만 덮는다
+      T.percept = { bonus: null, gold: null };
+      if (S.perception.target.bonus && ctx.bonusTotal > 0) {
+        const e = mistakeEntry('dropBonus', ctx);
+        // bonusScope 'single' 은 보너스가 정확히 1 인 색이 있을 때만 굴린다(12.7)
+        if (e && (e.bonusScope !== 'single' || C.some(function (c) { return me.bonuses[c] === 1; })) && roll('dropBonus', ctx, e)) {
+          T.percept.bonus = e.tiers || [1, 2, 3];
+          if (e.bonusScope) T.percept.bonusScope = e.bonusScope;
+        }
+      }
+      if (S.perception.target.gold && me.tokens.gold > 0) {
+        const e = mistakeEntry('dropGold', ctx);
+        if (e && roll('dropGold', ctx, e)) T.percept.gold = e.tiers || [1, 2, 3];
+      }
+    }
     /** @param {CardDef} card @param {Ctx} ctx @returns {{by:Record<string, number>, total:number, missing:Color[]}} */
     function needOf(card, ctx) {
       const T = mem.turn;
       const me = ctx.me;
-      if (!T.percept) {
-        // 이번 차례 처음 needOf 를 부를 때 한 번 굴린다 (dropBonus·dropGold)
-        // 결과는 그 실수가 걸리는 단계 목록(항목의 tiers, 기본 전체). 틀 7절: 그 카드의 단계가 tiers 에 들 때만 덮는다
-        T.percept = { bonus: null, gold: null };
-        if (S.perception.target.bonus && ctx.bonusTotal > 0) {
-          const e = mistakeEntry('dropBonus', ctx);
-          if (e && roll('dropBonus', ctx, e)) T.percept.bonus = e.tiers || [1, 2, 3];
-        }
-        if (S.perception.target.gold && me.tokens.gold > 0) {
-          const e = mistakeEntry('dropGold', ctx);
-          if (e && roll('dropGold', ctx, e)) T.percept.gold = e.tiers || [1, 2, 3];
-        }
-      }
+      ensurePercept(ctx);
       if (T.needCache[card.id]) return T.needCache[card.id];
-      const useBonus = S.perception.target.bonus && !(T.percept.bonus && T.percept.bonus.indexOf(card.tier) >= 0);
-      const useGold = S.perception.target.gold && !(T.percept.gold && T.percept.gold.indexOf(card.tier) >= 0);
+      const goldMode = S.perception.target.gold;
+      const useGold = !!goldMode && !(T.percept.gold && T.percept.gold.indexOf(card.tier) >= 0);
       /** @type {Record<string, number>} */
       const by = {};
-      for (const c of C) by[c] = Math.max(0, card.cost[c] - (useBonus ? me.bonuses[c] : 0) - me.tokens[c]);
-      let g = useGold ? me.tokens.gold : 0;
-      while (g-- > 0) {
-        /** @type {Color|null} */
-        let best = null;
-        for (const c of C) if (by[c] > 0 && (best === null || by[c] > by[best])) best = c;
-        if (best === null) break;
-        by[best]--;
-      }
+      for (const c of C) by[c] = Math.max(0, card.cost[c] - bonusUsed(card, c, me) - me.tokens[c]);
+      if (miscountOn(card, me)) shave(by, excess(card, me));
+      if (useGold && goldMode === true) shave(by, me.tokens.gold);
       const missing = C.filter(function (c) { return by[c] > 0; }).sort(function (a, b) { return by[b] - by[a] || C.indexOf(a) - C.indexOf(b); });
       let total = 0;
       for (const c of C) total += by[c];
+      if (useGold && goldMode === 'total') total = Math.max(0, total - me.tokens.gold);
       const r = { by, total, missing };
       T.needCache[card.id] = r;
       return r;
@@ -590,6 +696,17 @@
         case 'reading': return readIdx(x);
         case 'gaze': return gazeIdx(x);
         case 'random': return /** @type {number} */ (rnd.get(x));
+        case 'plan': return isPlan(x) ? 0 : 1;
+        case 'costColors': return costColorsOf(x.card);
+        case 'needPileMin': {
+          const N = needOf(x.card, ctx);
+          if (!N.missing.length) return -99;
+          let mn = Infinity;
+          for (const c of N.missing) if (ctx.v.supply[c] < mn) mn = ctx.v.supply[c];
+          return -mn;
+        }
+        case 'payCount': return payCount(x.card, ctx);
+        case 'slotLeft': return x.source === 'reserved' ? -1 : x.slot;
       }
       throw new Error('bad key ' + k);
     }
@@ -622,8 +739,29 @@
         case 'climbForEmpty':
           return x.tier !== 2 || (ctx.me.bonuses[x.card.bonus] === 0 && !ctx.v.market[1].some(function (id) { return !!id && cardOf(id).bonus === x.card.bonus; }));
         case 'pileOk': return needOf(x.card, ctx).missing.every(function (c) { return ctx.v.supply[c] > 0; });
+        case 'plan': return isPlan(x);
+        case 'notPlan': return !isPlan(x) && x.card.id !== mem.turn.droppedPlanId;
+        case 'noPlanOverlap': {
+          if (!mem.plan || isPlan(x)) return true;
+          const pc = planCard();
+          return !C.some(function (c) { return x.card.cost[c] > 0 && pc.cost[c] > 0; });
+        }
+        case 'payAvoidsPlan': {
+          if (!x.buy || x.payGold !== 0) return false;
+          if (!mem.plan) return true;
+          const pc = planCard();
+          const pay = /** @type {MoveBuy} */ (x.move).payment;
+          return C.every(function (c) { return !(pc.cost[c] - (S.perception.target.bonus ? ctx.me.bonuses[c] : 0) > 0) || pay[c] === 0; });
+        }
+        case 'fresh': return x.source !== 'reserved' && mem.boardPrev !== null && mem.boardPrev.indexOf(x.card.id) < 0;
+        case 'beatsPlan': return !mem.plan || x.card.points > planCard().points;
       }
       throw new Error('bad filter ' + f);
+    }
+
+    /** 단계의 점수 범위(11-11) @param {BotStage} st @param {BotCand} x */
+    function pointsOk(st, x) {
+      return (st.pointsMin === undefined || x.card.points >= st.pointsMin) && (st.pointsMax === undefined || x.card.points <= st.pointsMax);
     }
 
     /* ── 살 카드 고르기 (1.3 runBuyPick) ── */
@@ -632,21 +770,26 @@
     function runBuyPick(spec, cands, lifted, kind, ctx) {
       /** @type {string[]} */
       let skip = [];
+      let skipKeepsPlan = false;
       if (kind === 'buy') {
         // 실수 rowSkip: rows 의 원천에 켜진 카드가 있고 그 원천이 원천 둘 이상인 단계에 들어 있을 때 한 번 굴린다
+        // (exceptPlan 이면 겨눈 카드가 아닌 켜진 카드가 있을 때, 그리고 건너뛰어도 겨눈 카드는 본다. 12.10)
         const e = mistakeEntry('rowSkip', ctx);
         if (e && e.rows) {
           const rows = e.rows;
-          const lit = rows.some(function (r) { return cands.some(function (x) { return x.source === r; }); });
+          const lit = rows.some(function (r) { return cands.some(function (x) { return x.source === r && !(e.exceptPlan && isPlan(x)); }); });
           const inWide = spec.stages.some(function (st) { return st.from.length >= 2 && st.from.some(function (r) { return rows.indexOf(r) >= 0; }); });
-          if (lit && inWide && roll('rowSkip', ctx, e)) skip = rows.slice();
+          if (lit && inWide && roll('rowSkip', ctx, e)) { skip = rows.slice(); skipKeepsPlan = !!e.exceptPlan; }
         }
       }
       for (const st of spec.stages) {
         let from = st.from;
-        if (from.length >= 2) from = from.filter(function (r) { return skip.indexOf(r) < 0; });
+        const wide = from.length >= 2;
+        if (wide && !skipKeepsPlan) from = from.filter(function (r) { return skip.indexOf(r) < 0; });
         let Sx = cands.filter(function (x) {
           return from.indexOf(x.source) >= 0
+            && !(wide && skipKeepsPlan && skip.indexOf(x.source) >= 0 && !isPlan(x))
+            && pointsOk(st, x)
             && (st.filter || []).every(function (f) { return filterOk(f, x, ctx); })
             && acceptOk(avoidStatus(x, ctx, lifted), st.accept || 'ok');
         });
@@ -656,6 +799,18 @@
           for (const x of Sx) if (/** @type {number} */ (x.payTotal) < mn) mn = /** @type {number} */ (x.payTotal);
           const w = /** @type {number} */ (st.window);
           Sx = Sx.filter(function (x) { return /** @type {number} */ (x.payTotal) <= mn + w; });
+        }
+        if (kind === 'buy') {
+          // 실수 scanStop: 먼저 훑는 줄에서 지불 stopAt 이하인 카드를 찾으면 나머지 줄을 세지 않는다(12.10)
+          const e = mistakeEntry('scanStop', ctx);
+          if (e && e.rows && st.keys.indexOf('random') < 0) {
+            const rows = e.rows;
+            const early = Sx.filter(function (x) { return rows.indexOf(x.source) >= 0 && payCount(x.card, ctx) <= /** @type {number} */ (e.stopAt); });
+            if (early.length) {
+              const best = sortByKeys(Sx, st.keys, ctx).list[0];
+              if (rows.indexOf(best.source) < 0 && roll('scanStop', ctx, e)) Sx = Sx.filter(function (x) { return rows.indexOf(x.source) >= 0; });
+            }
+          }
         }
         if (kind === 'buy' && Sx.length >= 2 && roll('firstGlance', ctx)) {
           // 실수 firstGlance: 시선 순서가 가장 앞인 켜진 카드를 산다
@@ -674,6 +829,7 @@
       for (const st of spec.stages) {
         const Sx = ctx.cards.filter(function (x) {
           return st.from.indexOf(x.source) >= 0
+            && pointsOk(st, x)
             && (st.filter || []).every(function (f) { return filterOk(f, x, ctx); })
             && acceptOk(avoidStatus(x, ctx, []), st.accept || 'ok')
             && (extra ? extra(x) : true);
@@ -681,6 +837,23 @@
         if (Sx.length) return sortByKeys(Sx, st.keys, ctx).list[0];
       }
       return null;
+    }
+    /** runTarget 의 줄 세우기판(12.8): 단계마다 후보를 정렬해 이어 붙인다. exclude 카드와 앞 단계에 든 카드는 뺀다
+     * @param {BotPick} spec @param {Ctx} ctx @param {string|null} exclude @returns {BotCand[]} */
+    function rankTargets(spec, ctx, exclude) {
+      /** @type {BotCand[]} */
+      const out = [];
+      for (const st of spec.stages) {
+        const Sx = ctx.cards.filter(function (x) {
+          return x.card.id !== exclude && out.indexOf(x) < 0
+            && st.from.indexOf(x.source) >= 0
+            && pointsOk(st, x)
+            && (st.filter || []).every(function (f) { return filterOk(f, x, ctx); })
+            && acceptOk(avoidStatus(x, ctx, []), st.accept || 'ok');
+        });
+        if (Sx.length) for (const x of sortByKeys(Sx, st.keys, ctx).list) out.push(x);
+      }
+      return out;
     }
 
     /* ── legal 에서 찾기 (7절) ── */
@@ -724,11 +897,18 @@
     }
 
     /* ── 보석 집기 (1.3 composeTake) ── */
-    /** @param {Color[]} cols @param {string[]} fill @param {Ctx} ctx @returns {Color[]} */
-    function fillOrder(cols, fill, ctx) {
+    /** 남는 칸 순서. extra 는 'next'(다음 목표 색의 자리)·'targetSpare'(여유분 색)가 쓴다(11-11)
+     * @param {Color[]} cols @param {string[]} fill @param {Ctx} ctx @param {{next?:Color[], spare?:Color[]}} [extra] @returns {Color[]} */
+    function fillOrder(cols, fill, ctx, extra) {
+      const nx = (extra && extra.next) || [];
+      const sp = (extra && extra.spare) || [];
       return cols.slice().sort(function (a, b) {
         for (const f of fill) {
-          const d = f === 'pileHigh' ? ctx.v.supply[b] - ctx.v.supply[a] : held(ctx.me, a) - held(ctx.me, b);
+          let d;
+          if (f === 'pileHigh') d = ctx.v.supply[b] - ctx.v.supply[a];
+          else if (f === 'next') d = (nx.indexOf(a) < 0 ? 99 : nx.indexOf(a)) - (nx.indexOf(b) < 0 ? 99 : nx.indexOf(b));
+          else if (f === 'targetSpare') d = (sp.indexOf(a) >= 0 ? 0 : 1) - (sp.indexOf(b) >= 0 ? 0 : 1);
+          else d = held(ctx.me, a) - held(ctx.me, b);
           if (d) return d;
         }
         return C.indexOf(a) - C.indexOf(b);
@@ -743,15 +923,39 @@
       T.targetCard = t ? t.card : null;
       const N = t ? needOf(t.card, ctx) : null;
       /** @type {Color[]} */
-      const missing = N ? N.missing : [];
+      let missing = N ? N.missing : [];
+      if (N && mode.missingTie === 'pileHigh') {
+        // 모자란 수 큰 색 → 공급처 더미 높은 색 → 색 순서 (12.8 (1))
+        const by = N.by;
+        missing = missing.slice().sort(function (a, b) { return by[b] - by[a] || ctx.v.supply[b] - ctx.v.supply[a] || C.indexOf(a) - C.indexOf(b); });
+      }
       T.missing = missing;
       /** @type {Color|null} */
       let wanted = null;
       if (N && mode.pair === 'needTwo' && missing.length === 1 && N.by[missing[0]] >= 2) wanted = missing[0];
       if (mode.pair === 'oneColor' && missing.length === 1) wanted = missing[0];
+      if (N && mode.pair === 'topTwo') {
+        const ma = missing.filter(function (c) { return ctx.v.supply[c] > 0; });
+        if (ma.length >= 1 && ma.length <= 2 && N.by[ma[0]] >= 2) wanted = ma[0];
+      }
       if (wanted && legalTake2(ctx, wanted)) { T.taken = [wanted]; return legalTake2(ctx, wanted); }
+      /** @type {{next?:Color[], spare?:Color[]}} */
+      const extra = {};
+      if (mode.fill.indexOf('next') >= 0) {
+        // 다음 목표의 모자란 색(12.8 (3)). 검사가 이 명세의 random 키를 막으므로 rng 를 부르지 않는다
+        const nt = /** @type {string} */ (mode.nextTarget || mode.target);
+        const nexts = rankTargets(S.targets[nt], ctx, t ? t.card.id : null).slice(0, mode.nextCount || 1);
+        /** @type {Color[]} */
+        const nc = [];
+        for (const x of nexts) for (const c of needOf(x.card, ctx).missing) if (nc.indexOf(c) < 0) nc.push(c);
+        extra.next = nc;
+      }
+      if (mode.fill.indexOf('targetSpare') >= 0 && t && N) {
+        const me = ctx.me;
+        extra.spare = C.filter(function (c) { return t.card.cost[c] - (S.perception.target.bonus ? me.bonuses[c] : 0) > 0 && N.by[c] === 0; });
+      }
       if (mode.pair === 'toTen' && ctx.tokenTotal === 8) {
-        for (const c of fillOrder(C, mode.fill, ctx)) {
+        for (const c of fillOrder(C, mode.fill, ctx, extra)) {
           const m2 = legalTake2(ctx, c);
           if (m2) { T.taken = [c]; return m2; }
         }
@@ -762,12 +966,14 @@
       /** @param {Color[]} low 착각으로 '못 집는다'고 보는 색 */
       const build = function (low) {
         const ch = missing.filter(function (c) { return avail.indexOf(c) >= 0 && low.indexOf(c) < 0; }).slice(0, 3);
-        for (const c of fillOrder(avail.filter(function (c) { return low.indexOf(c) < 0 && ch.indexOf(c) < 0; }), mode.fill, ctx)) if (ch.length < want) ch.push(c);
+        for (const c of fillOrder(avail.filter(function (c) { return low.indexOf(c) < 0 && ch.indexOf(c) < 0; }), mode.fill, ctx, extra)) if (ch.length < want) ch.push(c);
         // 착각해도 규칙보다 적게 집지는 않는다
-        for (const c of fillOrder(low.filter(function (c) { return ch.indexOf(c) < 0; }), mode.fill, ctx)) if (ch.length < want) ch.push(c);
+        for (const c of fillOrder(low.filter(function (c) { return ch.indexOf(c) < 0; }), mode.fill, ctx, extra)) if (ch.length < want) ch.push(c);
         return ch;
       };
-      let chosen = build([]);
+      /** @type {Color[]} 이번 차례 바닥으로 본 색(pileLowAsEmpty, 12.8 (6)) */
+      const seen = T.seenEmpty || [];
+      let chosen = build(seen);
       const e = mistakeEntry('pileUnder4Blocked', ctx);
       if (e) {
         /** @type {Color[]} */
@@ -777,7 +983,9 @@
         } else {
           low = C.filter(function (c) { return ctx.v.supply[c] >= 1 && ctx.v.supply[c] <= 3; });
         }
-        if (low.length && chosen.some(function (c) { return low.indexOf(c) >= 0; }) && roll('pileUnder4Blocked', ctx, e)) chosen = build(low);
+        if (low.length && chosen.some(function (c) { return low.indexOf(c) >= 0; }) && roll('pileUnder4Blocked', ctx, e)) {
+          chosen = build(low.concat(seen.filter(function (c) { return low.indexOf(c) < 0; })));
+        }
       }
       T.taken = chosen;
       return legalTake3(ctx, chosen);
@@ -848,6 +1056,34 @@
           }
           return null;
         }
+        case 'plan': {
+          // 한 장 겨누기: 정하기(replace 없음) / 바꾸기(replace:true). 수를 내지 않고 기억만 바꾼다(12.5)
+          if (mem.plan && !rule.replace) return null;
+          const t = runTarget(S.targets[/** @type {string} */ (rule.target)], ctx);
+          if (t && !(mem.plan && t.card.id === mem.plan.cardId)) {
+            const prev = mem.plan ? mem.plan.cardId : null;
+            mem.plan = { cardId: t.card.id, setTurn: mem.turn.id, idle: 0, onBoard: t.source !== 'reserved' };
+            emit({ type: 'plan', turn: mem.turn.id, cardId: t.card.id, rule: rule.name || 'plan', replaced: prev });
+          }
+          return null;
+        }
+        case 'planDrop': {
+          if (mem.plan) {
+            mem.turn.droppedPlanId = mem.plan.cardId;
+            emit({ type: 'planDrop', turn: mem.turn.id, cardId: mem.plan.cardId, rule: rule.name || 'planDrop' });
+            mem.plan = null;
+          }
+          return null;
+        }
+        case 'reservePlan': {
+          if (!mem.plan) return null;
+          const id = mem.plan.cardId;
+          const x = ctx.cards.find(function (c) { return c.card.id === id && c.source !== 'reserved'; });
+          if (!x) return null;
+          const m = legalReserve(ctx, x.card.id); // 예약 칸이 찼으면 legal 에 없어 null
+          if (m) setReserveTarget(ctx, x);
+          return m;
+        }
       }
       return null;
     }
@@ -876,6 +1112,26 @@
     function decideAction(v) {
       const ctx = ctxOf(v);
       const T = mem.turn;
+      if (!T.d1Rolled) {
+        // D1 시작의 굴림 둘(11-11, 12.10): 한 차례에 한 번. 값 파일에 그 항목이 있을 때만 rng 를 부른다
+        T.d1Rolled = true;
+        const e1 = mistakeEntry('chipMiscount', ctx);
+        if (e1) {
+          const mc = e1.minColors || 3;
+          if (ctx.cards.some(function (x) { return costColorsOf(x.card) >= mc && excess(x.card, ctx.me) > 0; })) {
+            T.miscountMin = mc;
+            T.miscount = roll('chipMiscount', ctx, e1);
+          }
+        }
+        const e2 = mistakeEntry('pileLowAsEmpty', ctx);
+        if (e2 && mem.plan) {
+          const N = needOf(planCard(), ctx);
+          if (!N.missing.some(function (c) { return ctx.v.supply[c] === 0; })) {
+            const low = N.missing.filter(function (c) { return ctx.v.supply[c] >= 1 && ctx.v.supply[c] <= 3; });
+            if (low.length && roll('pileLowAsEmpty', ctx, e2)) T.seenEmpty = low;
+          }
+        }
+      }
       // S3 긴 판: 모든 기피를 풀고 점수 있는 카드 중 점수 큰 것(같으면 지불 적은 것)
       if (v.turnsTaken >= S.safety.longGameRounds * v.numPlayers) {
         const xs = ctx.buys.filter(function (b) { return b.card.points > 0; });
@@ -896,7 +1152,7 @@
         if (!condHolds(rule.when, ctx)) continue;
         if (rule.p !== undefined && rule.p < 1 && rng() >= rule.p) continue; // rng 를 부르는 자리 첫째
         m = runRule(rule, ctx);
-        if (m) { used = rule; T.rule = rule; break; }
+        if (m) { used = rule; T.rule = rule; if (rule.tag) roleTag(rule.tag); break; }
       }
       if (!m) { m = fallbackAction(ctx.legal); via = 'fallback'; tags.push('fallback'); }
       if (!m) return { move: null, rule: null, via };
@@ -932,7 +1188,9 @@
       /** @type {Record<string, number>} */
       const level = { gold: S.ret.keepGold ? Infinity : 0 };
       for (const c of C) level[c] = 0;
+      const upToAt = S.ret.protect.indexOf('targetUpTo');
       S.ret.protect.forEach(function (/** @type {string} */ kind, /** @type {number} */ i) {
+        if (kind === 'targetUpTo') return; // 하나씩 돌려줄 때마다 다시 센다(아래)
         /** @type {Color[]} */
         let set = [];
         if (kind === 'targetMissing') set = T.missing || [];
@@ -952,9 +1210,23 @@
       const heldNow = function (c) { return counts[c] + (c !== 'gold' && S.perception.held.bonus ? /** @type {any} */ (me.bonuses)[c] : 0); };
       /** @param {string} c */
       const bonusOf = function (c) { return c === 'gold' ? 0 : /** @type {any} */ (me.bonuses)[c]; };
+      /** @type {Record<string, number>|null} 목표 비용의 필요 개수(targetUpTo, 12.9) */
+      let upTo = null;
+      if (upToAt >= 0) {
+        upTo = {};
+        const tc = /** @type {CardDef|null} */ (T.targetCard);
+        for (const c of TOKEN_KEYS) upTo[c] = tc && c !== 'gold' ? Math.max(0, tc.cost[/** @type {Color} */ (c)] - (S.perception.target.bonus ? me.bonuses[/** @type {Color} */ (c)] : 0)) : 0;
+      }
+      /** @param {string} c */
+      const lv = upTo === null ? function (/** @type {string} */ c) { return level[c]; } : function (/** @type {string} */ c) {
+        const u = /** @type {Record<string, number>} */ (upTo)[c];
+        return Math.max(level[c], counts[c] <= u && u > 0 ? S.ret.protect.length - upToAt : 0);
+      };
       for (let i = 0; i < n; i++) {
         const cands = TOKEN_KEYS.filter(function (c) { return counts[c] > 0; }).sort(function (a, b) {
-          if (level[a] !== level[b]) return level[a] < level[b] ? -1 : 1;
+          const la = lv(a);
+          const lb = lv(b);
+          if (la !== lb) return la < lb ? -1 : 1;
           for (const o of S.ret.order) {
             const d = o === 'heldHigh' ? heldNow(b) - heldNow(a) : bonusOf(b) - bonusOf(a);
             if (d) return d;
@@ -1045,8 +1317,26 @@
         id: v.turnsTaken, tokensBefore: me.tokenTotal, bonusesAtStart: Object.assign({}, me.bonuses), fanfare: mem.fanfare,
         target: null, targetOnBoard: false, targetCard: null, missing: [], taken: [], takenEv: null, bought: null, reservedAct: false,
         returned: 0, percept: null, needCache: {}, nobleDone: false, rule: null,
+        seenEmpty: [], droppedPlanId: null, miscount: false, miscountMin: 3, d1Rolled: false,
       };
       mem.fanfare = { self: false, others: false };
+      // 11-11 (12.6): 지난 판 모습과 겨눈 카드 확인. rng 를 부르지 않고, plan 이 없으면 기억만 옮긴다
+      mem.boardPrev = mem.boardNow;
+      mem.boardNow = boardCards(v).map(function (x) { return x.card.id; });
+      if (mem.plan) {
+        const pid = mem.plan.cardId;
+        if (me.cards.indexOf(pid) >= 0) mem.plan = null;
+        else if (onBoard(v, pid)) mem.plan.onBoard = true;
+        else if (me.reserved.some(function (r) { return /** @type {any} */ (r).id === pid; })) mem.plan.onBoard = false;
+        else {
+          if (mem.plan.onBoard) {
+            if (!mem.snatched) emit({ type: 'snatched', turn: v.turnsTaken, cardId: pid });
+            mem.snatched = true;
+          }
+          emit({ type: 'planLost', turn: v.turnsTaken, cardId: pid });
+          mem.plan = null;
+        }
+      }
     }
 
     /** state 를 받을 때마다: 새 판이면 기억을 처음으로, 내 차례의 시작이면 차례 기록을 새로 @param {PlayerView|null} v */
@@ -1071,7 +1361,12 @@
       tags = [];
       if (swapped) roleTag(mem.swapStreak ? 'swapRepeat' : 'swapTake');
       mem.swapStreak = swapped ? mem.swapStreak + 1 : 0;
-      mem.noBuyStreak = T.bought ? 0 : mem.noBuyStreak + 1;
+      if (mem.plan) {
+        if (T.bought === mem.plan.cardId) mem.plan = null;          // 겨눈 카드를 샀다
+        else if (T.bought || T.reservedAct) mem.plan.idle = 0;      // 사거나 예약하면 지루함 셈 0
+        else if (type === 'take') mem.plan.idle += 1;               // 보석만 집은 차례('pass' 는 그대로)
+      }
+      mem.noBuyStreak = (T.bought || (T.reservedAct && S.safety.noBuyResets.indexOf('reserve') >= 0)) ? 0 : mem.noBuyStreak + 1;
       mem.lastTargetId = T.bought ? null : T.target;
       mem.lastTargetOnBoard = !!(mem.lastTargetId && T.targetOnBoard);
       emit({ type: 'turnEnd', turn: T.id, action: type, tokensBefore: T.tokensBefore, returned: T.returned, swapped,
